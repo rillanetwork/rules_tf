@@ -11,7 +11,7 @@ def _impl(ctx):
 
     extra_args = [arg for arg in ctx.attr.extra_args if not arg.startswith("--chdir")]
 
-    cmd = "{tf} -chdir={mod_dir} init -backend=false -input=false -plugin-dir=$PWD/{plugins_mirror} > /dev/null; {runner} '{mod_dir}' '{config_file}' {extra_args}".format(
+    cmd = "TF_PLUGIN_CACHE_DIR=$PWD/{plugins_mirror} {tf} -chdir={mod_dir} init -backend=false -input=false > /dev/null; {runner} '{mod_dir}' '{config_file}' {extra_args}".format(
         tf = tf_runtime.tf.short_path,
         runner = tflint_runtime.runner.short_path,
         mod_dir = ctx.label.package,

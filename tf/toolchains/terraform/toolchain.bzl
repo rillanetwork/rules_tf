@@ -75,8 +75,8 @@ def _download_impl(ctx):
     ctx.execute([
         "bash",
         "-c",
-        "mkdir -p mirror; terraform/terraform providers mirror ./mirror > /dev/null",
-        ])
+        "mkdir -p mirror; TF_PLUGIN_CACHE_DIR=./mirror terraform/terraform init > /dev/null",
+    ])
 
     return
 
