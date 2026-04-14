@@ -2,7 +2,6 @@ load("@rules_pkg//pkg:pkg.bzl", "pkg_tar")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_files")
 load("@rules_tf//tf/rules:tf-gen-doc.bzl", _tf_gen_doc = "tf_gen_doc" )
 load("@rules_tf//tf/rules:tf-gen-versions.bzl", "tf_gen_versions")
-load("@rules_tf//tf/rules:tf-providers-versions.bzl", _tf_providers_versions = "tf_providers_versions")
 load("@rules_tf//tf/rules:tf-lint.bzl", "tf_lint_test")
 load("@rules_tf//tf/rules:tf-module.bzl", _tf_module = "tf_module", "tf_module_deps", "tf_artifact", "tf_validate_test", _tf_format = "tf_format", "tf_format_test")
 
@@ -14,10 +13,10 @@ bzl_files = [
 ]
 
 def tf_module(name,
-              providers_versions = None,
               data = [],
               size="small",
-              providers = [],
+              providers = {},
+              tf_version = "",
               tflint_config = None,
               tflint_extra_args = [],
               deps = [],
@@ -26,24 +25,37 @@ def tf_module(name,
               tags = [],
               skip_validation = False):
 
-    # Handle both string list and dict formats for providers
-    providers_list = []
-    providers_dict_json = ""
-    
-    if type(providers) == type([]):
-        # String list format (legacy)
-        providers_list = providers
-    elif type(providers) == type({}):
-        # Dict format (new support for configuration aliases)
-        providers_dict_json = json.encode(providers)
-    else:
-        fail("providers must be either a list of strings or a dict")
+    # Normalise provider values so tf_gen_versions sees a uniform shape:
+    #   {"alias": {"source": "...", "version": "...", "configuration_aliases": [...]}}.
+    #
+    # Accepted value forms:
+    #   "hashicorp/random:3.6.0"                    → full inline source:version
+    #   "terraform.io/builtin/terraform"             → builtin provider (no version)
+    #   {"source": "hashicorp/random", "version": "3.6.0"} → explicit dict
+    #   {"source": "hashicorp/random", "version": "3.6.0",
+    #    "configuration_aliases": ["random.a", "random.b"]} → with aliases
+    normalised = {}
+    for pname, pval in providers.items():
+        if type(pval) == type(""):
+            if "/" not in pval:
+                fail("providers[%s]: value %s must be a full 'source:version' string (e.g. 'hashicorp/random:3.6.0')" % (pname, pval))
+            parts = pval.split(":")
+            if len(parts) == 2:
+                normalised[pname] = {"source": parts[0], "version": parts[1]}
+            elif len(parts) == 1:
+                # Builtin provider, no version
+                normalised[pname] = {"source": pval}
+            else:
+                fail("providers[%s]: invalid format %s, expected '[hostname/]org/type:version'" % (pname, pval))
+        elif type(pval) == type({}):
+            normalised[pname] = pval
+        else:
+            fail("providers[%s]: value must be a 'source:version' string or a config dict" % pname)
 
     tf_gen_versions(
         name = "gen-tf-versions",
-        providers = providers_list,
-        providers_dict_json = providers_dict_json,
-        providers_versions  = providers_versions,
+        providers_dict_json = json.encode(normalised),
+        tf_version = tf_version,
         experiments = experiments,
         visibility = visibility,
         tags = tags,
@@ -128,15 +140,5 @@ def tf_gen_doc(name, modules, config = None, **kwargs):
         modules = modules,
         config = config,
         visibility = ["//visibility:public"],
-        **kwargs
-    )
-
-def tf_providers_versions(name, tf_version = "", providers = {}, tags = ["no-sandbox"], **kwargs):
-    _tf_providers_versions(
-        name = name,
-        providers = providers,
-        tf_version = tf_version,
-        visibility = ["//visibility:public"],
-        tags = tags,
         **kwargs
     )

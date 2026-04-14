@@ -7,5 +7,5 @@ alias(
 )
 
 exports_files(
-     ["mirror"],
+     ["mirror", "mirror_versions.json"],
 )

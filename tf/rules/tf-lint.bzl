@@ -1,4 +1,4 @@
-load("@rules_tf//tf/rules:providers.bzl", "TfModuleInfo", "TfProvidersVersionsInfo")
+load("@rules_tf//tf/rules:providers.bzl", "TfModuleInfo")
 
 def _impl(ctx):
     tflint_runtime = ctx.toolchains["@rules_tf//:tflint_toolchain_type"].runtime

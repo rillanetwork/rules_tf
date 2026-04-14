@@ -2,12 +2,12 @@ load("@rules_tf//tf:def.bzl", "tf_module")
 
 tf_module(
     name = "root-mod-multi-provider",
-    providers = [
-        "random",
-    ],
+    providers = {
+        "random": "hashicorp/random:3.3.2",
+    },
+    tf_version = ">= 1.9, <= 1.13",
     deps = [
         "//tf/modules/multi_provider",
     ],
-    providers_versions = "//tf:versions",
     tflint_config = "//tf:tflint-custom-config",
 )

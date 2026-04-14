@@ -26,10 +26,14 @@ tf.download(
     tflint_version = "0.53.0",
     tfdoc_version = "0.19.0",
     use_tofu = False,
-    mirror = {
-        "random" : "hashicorp/random:3.3.2",
-        "null"   : "hashicorp/null:3.1.1",
-    }
+    mirror = [
+        "hashicorp/random:3.3.2",
+        "hashicorp/null:3.1.1",
+        # The same provider may appear multiple times with different versions.
+        # Modules then pick whichever version they require via their own
+        # `tf_providers_versions` target / required_providers block.
+        # "hashicorp/random:3.6.0",
+    ]
 )
 
 # Switch to tofu
@@ -37,10 +41,10 @@ tf.download(
 # tf.download(
 #    version = "1.6.0",
 #    use_tofu = True,
-#    mirror = {
-#        "random" : "hashicorp/random:3.3.2",
-#        "null"   : "hashicorp/null:3.1.1",
-#    }
+#    mirror = [
+#        "hashicorp/random:3.3.2",
+#        "hashicorp/null:3.1.1",
+#    ]
 # )
 
 use_repo(tf, "tf_toolchains")
@@ -55,60 +59,48 @@ register_toolchains(
 Once you've imported the rule set, you can then load the tf rules in your `BUILD` files with:
 
 ```python
-load("@rules_tf//tf:def.bzl", "tf_providers_versions", "tf_module")
-
-tf_providers_versions(
-    name = "providers",
-    tf_version = "1.2.3",
-    providers = {
-        "random" : "hashicorp/random:>=3.3",
-        "null"   : "hashicorp/null:>=3.1",
-    },
-)
+load("@rules_tf//tf:def.bzl", "tf_module")
 
 tf_module(
     name = "root-mod-a",
-    providers = [
-        "random",
-    ],
+    providers = {
+        "random": "hashicorp/random:3.3.2",
+        "null":   "hashicorp/null:3.1.1",
+    },
+    tf_version = ">= 1.9",
     deps = [
         "//tf/modules/mod-a",
     ],
-    providers_versions = ":providers",
 )
 ```
 
+Each entry in the `providers` dict maps a local alias to a `"source:version"` string.
+The same provider source can appear in different modules at different versions —
+as long as every version is listed in the `mirror` of your `tf.download()` tag.
+
 #### Provider Configuration Aliases
 
-The `providers` parameter supports both string list format and dictionary format (for configuration aliases):
+For providers that need multiple configurations (e.g. multi-region), use the
+dict form with `configuration_aliases`:
 
 ```python
-# String list format (legacy)
-tf_module(
-    name = "simple-module",
-    providers = [
-        "random",
-        "null",
-    ],
-    providers_versions = ":providers",
-)
-
-# Dictionary format (for provider aliases)
 tf_module(
     name = "multi-provider-module",
     providers = {
         "random": {
-            "configuration_aliases": ["random.primary", "random.secondary"]
+            "source": "hashicorp/random",
+            "version": "3.3.2",
+            "configuration_aliases": ["random.primary", "random.secondary"],
         },
         "aws": {
-            "configuration_aliases": ["aws.us_east_1", "aws.us_west_2"]
-        }
+            "source": "hashicorp/aws",
+            "version": "5.0.0",
+            "configuration_aliases": ["aws.us_east_1", "aws.us_west_2"],
+        },
     },
-    providers_versions = ":providers",
+    tf_version = ">= 1.9",
 )
 ```
-
-The dictionary format allows you to specify `configuration_aliases` for providers that need multiple configurations, which is useful for multi-region deployments or when a module needs to work with multiple instances of the same provider.
 
 #### Skipping Validation for Nested Modules
 
@@ -120,20 +112,23 @@ tf_module(
     name = "multi-region-module",
     providers = {
         "aws": {
-            "configuration_aliases": ["aws.us_east_1", "aws.us_west_2"]
-        }
+            "source": "hashicorp/aws",
+            "version": "5.0.0",
+            "configuration_aliases": ["aws.us_east_1", "aws.us_west_2"],
+        },
     },
-    providers_versions = "//tf:versions",
-    skip_validation = True,  # Required for modules with configuration aliases
+    tf_version = ">= 1.9",
+    skip_validation = True,
 )
 
 # Root module that uses the nested module - can validate
 tf_module(
     name = "root-module",
-    providers = ["aws"],
+    providers = {
+        "aws": "hashicorp/aws:5.0.0",
+    },
+    tf_version = ">= 1.9",
     deps = ["//tf/modules/multi-region-module"],
-    providers_versions = "//tf:versions",
-    # skip_validation = False (default) - root modules can be validated
 )
 ```
 
@@ -169,12 +164,11 @@ filegroup(
 
 tf_module(
     name = "mod-a",
-    providers = [
-        "random",
-    ],
-    ...
-    tflint_config = ":tflint-custom-config"
-
+    providers = {
+        "random": "hashicorp/random:3.3.2",
+    },
+    tf_version = ">= 1.9",
+    tflint_config = ":tflint-custom-config",
 )
 ```
 
@@ -185,27 +179,17 @@ are versioned. It is possible to generate a versions.tf.json file by running
 a dedicated target:
 
 ```python
-load("@rules_tf//tf:def.bzl", "tf_providers_versions", "tf_module")
-
-tf_providers_versions(
-    name = "providers",
-    tf_version = "1.2.3",
-    providers = {
-        "random" : "hashicorp/random:3.3.2",
-        "null"   : "hashicorp/null:3.1.1",
-    },
-)
+load("@rules_tf//tf:def.bzl", "tf_module")
 
 tf_module(
     name = "root-mod-a",
-    providers = [
-        "random",
-    ],
+    providers = {
+        "random": "hashicorp/random:3.3.2",
+    },
+    tf_version = ">= 1.9",
     deps = [
         "//tf/modules/mod-a",
     ],
-
-    providers_versions = ":providers",
 )
 ```
 

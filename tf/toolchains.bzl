@@ -70,6 +70,11 @@ tf_toolchain = _tf_toolchain
 tfdoc_toolchain = _tfdoc_toolchain
 tflint_toolchain = _tflint_toolchain
 
+def _render_mirror_versions(joined):
+    if joined == "":
+        return "[]"
+    return "[" + ", ".join(['"%s"' % v for v in joined.split(",")]) + "]"
+
 def _tf_toolchains_impl(ctx):
     content = """
 load("@rules_tf//tf:toolchains.bzl", "platforms")
@@ -101,6 +106,7 @@ package(default_visibility = ["//visibility:public"])
             toolchain_repo = repo,
             os = ctx.attr.os,
             arch = ctx.attr.arch,
+            mirror_versions = _render_mirror_versions(ctx.attr.repo_mirrors.get(repo, "")),
         )
         content += chunk
 
@@ -109,6 +115,7 @@ package(default_visibility = ["//visibility:public"])
             toolchain_repo = repo,
             os = ctx.attr.os,
             arch = ctx.attr.arch,
+            mirror_versions = _render_mirror_versions(ctx.attr.repo_mirrors.get(repo, "")),
         )
         content += chunk
 
@@ -121,6 +128,9 @@ tf_toolchains = repository_rule(
         "tfdoc_repos": attr.string_list(mandatory = True),
         "terraform_repos": attr.string_list(mandatory = True),
         "tofu_repos": attr.string_list(mandatory = True),
+        "repo_mirrors": attr.string_dict(
+            doc = "Per-repo mirror manifest: repo name -> comma-joined 'source@version' entries.",
+        ),
         "os": attr.string(mandatory = True),
         "arch": attr.string(mandatory = True),
     },
