@@ -2,13 +2,13 @@ load("@rules_tf//tf:def.bzl", "tf_module")
 
 tf_module(
     name = "root-mod-a",
-    providers = [
-        "random",
-        "terraform",
-    ],
+    providers = {
+        "random": "hashicorp/random:3.3.2",
+        "terraform": "terraform.io/builtin/terraform",
+    },
+    tf_version = ">= 1.9, <= 1.10",
     deps = [
         "//tf/modules/mod-a",
     ],
-    providers_versions = "//tf:versions",
     tflint_config = "//tf:tflint-custom-config",
 )

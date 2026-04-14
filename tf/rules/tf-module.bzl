@@ -1,4 +1,4 @@
-load("@rules_tf//tf/rules:providers.bzl", "TfModuleInfo", "TfProvidersVersionsInfo")
+load("@rules_tf//tf/rules:providers.bzl", "TfModuleInfo")
 load("@rules_tf//tf/rules:providers.bzl", "TfArtifactInfo")
 load("@rules_pkg//pkg:providers.bzl", "PackageArtifactInfo")
 load("@rules_pkg//pkg:providers.bzl", "PackageFilesInfo")

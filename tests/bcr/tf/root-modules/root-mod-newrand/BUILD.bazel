@@ -1,0 +1,12 @@
+load("@rules_tf//tf:def.bzl", "tf_module")
+
+# Demonstrates multi-version support: uses hashicorp/random 3.6.0 while
+# //tf/root-modules/root-mod-a uses the same provider at 3.3.2. Both versions
+# are pre-fetched into the shared mirror declared in MODULE.bazel.
+tf_module(
+    name = "root-mod-newrand",
+    providers = {
+        "random": "hashicorp/random:3.6.0",
+    },
+    tf_version = ">= 1.9, <= 1.13",
+)

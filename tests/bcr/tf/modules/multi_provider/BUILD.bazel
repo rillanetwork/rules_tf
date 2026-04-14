@@ -4,10 +4,11 @@ tf_module(
     name = "multi_provider",
     providers = {
         "random": {
-            "configuration_aliases": ["random.primary", "random.secondary"]
-        }
+            "source": "hashicorp/random",
+            "version": "3.3.2",
+            "configuration_aliases": ["random.primary", "random.secondary"],
+        },
     },
-    providers_versions = "//tf:versions",
     tflint_config = "//tf:tflint-custom-config",
     skip_validation = True,  # Nested module with provider aliases can't be validated standalone
 )

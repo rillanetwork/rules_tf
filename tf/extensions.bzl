@@ -3,6 +3,7 @@ load("@rules_tf//tf/toolchains/tflint:toolchain.bzl", "tflint_download")
 load("@rules_tf//tf/toolchains/tfdoc:toolchain.bzl", "tfdoc_download")
 load("@rules_tf//tf/toolchains/tofu:toolchain.bzl", "tofu_download")
 load("@rules_tf//tf:toolchains.bzl", "tf_toolchains")
+load("@rules_tf//tf/toolchains:utils.bzl", "mirror_manifest", "parse_mirror_entries")
 load("@rules_tf//tf:versions.bzl", "TFDOC_VERSION")
 load("@rules_tf//tf:versions.bzl", "TFLINT_VERSION")
 
@@ -40,6 +41,7 @@ def _tf_repositories(ctx):
     tfdoc_toolchains = []
     terraform_toolchains = []
     tofu_toolchains = []
+    repo_mirrors = {}
 
     for module in ctx.modules:
         for index, version_tag in enumerate(module.tags.download):
@@ -79,6 +81,8 @@ def _tf_repositories(ctx):
             tflint_toolchains += [tflint_repo_name]
 
 
+            repo_mirrors[tf_repo_name] = mirror_manifest(parse_mirror_entries(version_tag.mirror))
+
             if version_tag.use_tofu:
                 tofu_download(
                     name = tf_repo_name,
@@ -98,12 +102,17 @@ def _tf_repositories(ctx):
                 )
                 terraform_toolchains += [tf_repo_name]
 
+    # repo_mirrors values are list[str]; flatten into a string_list_dict by
+    # joining on "," (entries themselves never contain ",").
+    repo_mirrors_flat = {k: ",".join(v) for k, v in repo_mirrors.items()}
+
     tf_toolchains(
         name = "tf_toolchains",
         tflint_repos = tflint_toolchains,
         tfdoc_repos = tfdoc_toolchains,
         terraform_repos = terraform_toolchains,
         tofu_repos = tofu_toolchains,
+        repo_mirrors = repo_mirrors_flat,
         os = host_detected_os,
         arch = host_detected_arch,
     )
@@ -114,7 +123,13 @@ _version_tag = tag_class(
         "version": attr.string(mandatory = True),
         "tflint_version": attr.string(default = TFLINT_VERSION),
         "tfdoc_version": attr.string(default = TFDOC_VERSION),
-        "mirror": attr.string_dict(mandatory = True),
+        "mirror": attr.string_list(
+            mandatory = True,
+            doc = "List of providers to pre-fetch into the local mirror, formatted " +
+                  "as '[hostname/]namespace/type:version'. The same source may appear " +
+                  "multiple times with different versions; user modules pick whichever " +
+                  "version they require via their own required_providers block.",
+        ),
     },
 )
 

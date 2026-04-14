@@ -1,7 +1,16 @@
-load("@rules_tf//tf/toolchains:utils.bzl", "get_sha256sum")
+load(
+    "@rules_tf//tf/toolchains:utils.bzl",
+    "get_sha256sum",
+    "mirror_manifest",
+    "parse_mirror_entries",
+    "render_mirror_versions_tf_jsons",
+)
 
 def _download_impl(ctx):
     ctx.report_progress("Downloading tofu")
+
+    parsed_entries = parse_mirror_entries(ctx.attr.mirror)
+    manifest = mirror_manifest(parsed_entries)
 
     ctx.template(
         "BUILD",
@@ -11,6 +20,7 @@ def _download_impl(ctx):
             "{version}": ctx.attr.version,
             "{os}": ctx.attr.os,
             "{arch}": ctx.attr.arch,
+            "{mirror_versions}": json.encode(manifest),
         },
     )
 
@@ -42,41 +52,22 @@ def _download_impl(ctx):
     if not res.success:
         fail("!failed to dl: ", url)
 
-    providers = {}
-    for k in ctx.attr.mirror:
-        v = ctx.attr.mirror[k]
-        elems = v.split(":")
-        if len(elems) != 2:
-            fail("provider version format must be org/provider:x.y.x, was: %s".format(v))
+    ctx.file("mirror_versions.json", content = json.encode(manifest))
 
-        provider_elems = elems[0].split("/")
-        if len(provider_elems) != 2:
-            fail("provider version format must be org/provider:x.y.z, was: %s".format(v))
-
-        version = elems[1]
-        version_elems = version.split(".")
-        if len(version_elems) != 3:
-            fail("provider version format must be org/provider:x.y.z, was: %s".format(v))
-
-        providers[k] = {
-            "source": elems[0], "version": elems[1],
-        }
-
-    versions_tf = {
-        "terraform": [
-            {
-                "required_providers": [dict([(p, providers[p]) for p in providers ])],
-            }
-        ]
-    }
-
-    ctx.file("versions.tf.json", content = json.encode(versions_tf))
-
-    ctx.execute([
-        "bash",
-        "-c",
-        "mkdir -p mirror; tofu/tofu providers mirror ./mirror > /dev/null",
-        ])
+    versions_tf_jsons = render_mirror_versions_tf_jsons(parsed_entries)
+    if len(versions_tf_jsons) > 0:
+        for vtf in versions_tf_jsons:
+            ctx.file("versions.tf.json", content = json.encode(vtf))
+            res = ctx.execute([
+                "bash",
+                "-c",
+                "mkdir -p mirror; tofu/tofu providers mirror ./mirror > /dev/null",
+            ])
+            if res.return_code != 0:
+                fail("failed to populate tofu provider mirror:\n" + res.stderr)
+        ctx.delete("versions.tf.json")
+    else:
+        ctx.file("mirror/.keep", content = "")
 
     return
 
@@ -86,7 +77,7 @@ tofu_download = repository_rule(
         "version": attr.string(mandatory = True),
         "os": attr.string(mandatory = True),
         "arch": attr.string(mandatory = True),
-        "mirror": attr.string_dict(mandatory = True),
+        "mirror": attr.string_list(mandatory = True),
     },
 )
 
@@ -95,6 +86,7 @@ tf_toolchain(
    name = "{toolchain_repo}_toolchain_impl",
    tf = "@{toolchain_repo}//:runtime",
    mirror = "@{toolchain_repo}//:mirror",
+   mirror_versions = {mirror_versions},
 )
 
 toolchain(
