@@ -71,7 +71,7 @@ def main():
       description='Print release notes for a package')
 
   parser.add_argument(
-      '--org', default='yanndegat', help='Github org name')
+      '--org', default='rillanetwork', help='Github org name')
   parser.add_argument(
       '--repo', default=None, required=True, help='Repo name')
   parser.add_argument(

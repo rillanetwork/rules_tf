@@ -1,5 +1,9 @@
 # Tf Rules
 
+> **Note:** This is a significant fork of [yanndegat/rules_tf](https://github.com/yanndegat/rules_tf)
+> with additions including multi-version provider mirrors, `mirror_json` support,
+> and inline provider declarations. Requires Bazel 8 or later.
+
 The Tf rules are useful to validate, lint and format terraform code.
 
 They can typically be used in a terraform monorepo of modules to lint, run validation tests, auto generate documentation and enforce the consistency of Tf and providers versions across all modules.
@@ -13,12 +17,12 @@ Because now you can either use "tofu" or "terraform" binary.
 To import rules_tf in your project, you first need to add it to your `MODULE.bazel` file:
 
 ```python
-bazel_dep(name = "rules_tf", version = "0.0.9")
-# git_override(
-#     module_name = "rules_tf",
-#     remote      = "https://github.com/yanndegat/rules_tf",
-#     commit      = "...",
-# )
+bazel_dep(name = "rules_tf", version = "0.0.10")
+git_override(
+    module_name = "rules_tf",
+    remote      = "https://github.com/rillanetwork/rules_tf",
+    commit      = "...",
+)
 
 tf = use_extension("@rules_tf//tf:extensions.bzl", "tf_repositories", dev_dependency = True)
 tf.download(

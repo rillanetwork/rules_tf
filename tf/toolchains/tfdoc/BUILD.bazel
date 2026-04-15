@@ -10,7 +10,6 @@ filegroup(
         "*.yaml",
     ]),
     visibility = [
-        "//distro:__pkg__",
         "//tf:__pkg__",
     ],
 )
@@ -22,7 +21,6 @@ exports_files(
         "*.yaml",
     ]),
     visibility = [
-        "//distro:__pkg__",
         "//tf:__pkg__",
     ],
 )
