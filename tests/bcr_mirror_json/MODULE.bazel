@@ -1,0 +1,24 @@
+module(
+    name = "rules_tf_bcr_mirror_json_tests",
+    version = "0.0.1",
+)
+
+bazel_dep(name = "rules_tf", version = "", repo_name = "rules_tf")
+local_path_override(
+    module_name = "rules_tf",
+    path = "../..",
+)
+
+tf = use_extension("@rules_tf//tf:extensions.bzl", "tf_repositories")
+tf.download(
+    version = "1.9.5",
+    tflint_version = "0.53.0",
+    tfdoc_version = "0.19.0",
+    use_tofu = False,
+    mirror_json = "//tf:providers.json",
+)
+
+use_repo(tf, "tf_toolchains")
+register_toolchains(
+    "@tf_toolchains//:all",
+)

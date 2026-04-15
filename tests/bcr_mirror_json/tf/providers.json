@@ -1,0 +1,4 @@
+[
+    "hashicorp/random:3.3.2",
+    "hashicorp/null:3.1.1"
+]
