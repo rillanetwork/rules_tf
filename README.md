@@ -36,6 +36,12 @@ tf.download(
     ]
 )
 
+# Alternatively, load the provider list from a JSON file:
+# tf.download(
+#     version = "1.9.5",
+#     mirror_json = "//terraform:providers.json",
+# )
+
 # Switch to tofu
 # tf = use_extension("@rules_tf//tf:extensions.bzl", "tf_repositories")
 # tf.download(
@@ -53,6 +59,31 @@ register_toolchains(
     dev_dependency = True,
 )
 ```
+
+### Externalizing the provider list with `mirror_json`
+
+Instead of listing providers inline in `MODULE.bazel`, you can maintain them in a
+standalone JSON file and reference it with `mirror_json`:
+
+```json
+// terraform/providers.json
+[
+    "hashicorp/random:3.3.2",
+    "hashicorp/null:3.1.1"
+]
+```
+
+```python
+tf.download(
+    version = "1.9.5",
+    mirror_json = "//terraform:providers.json",
+)
+```
+
+The JSON file must contain an array of strings in the same
+`"[hostname/]namespace/type:version"` format used by the inline `mirror` attribute.
+This is useful when the provider list is generated or shared across multiple
+repositories.
 
 ### Using Tf rules
 
