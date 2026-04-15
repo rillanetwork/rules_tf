@@ -30,7 +30,7 @@ package(default_applicable_licenses = ["//:license"])
 filegroup(
     name = "standard_package",
     srcs = glob(["*"]),
-    visibility = ["//distro:__pkg__"],
+    visibility = ["//visibility:public"],
 )
 
 exports_files(

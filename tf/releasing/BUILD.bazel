@@ -23,7 +23,6 @@ filegroup(
         "*.py",
     ]),
     visibility = [
-        "//distro:__pkg__",
         "//tf:__pkg__",
     ],
 )

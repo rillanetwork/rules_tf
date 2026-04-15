@@ -14,9 +14,8 @@ jobs:
     strategy:
       matrix:
         bazel-version:
-          - 6.x
-          - 7.x
-          - 8.0.0rc4
+          - 8.x
+          - 9.x
         runner:
           - ubuntu-latest
           - macos-latest

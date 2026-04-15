@@ -11,9 +11,8 @@ jobs:
     strategy:
       matrix:
         bazel-version:
-          - 6.x
-          - 7.x
-          - 8.0.0rc4
+          - 8.x
+          - 9.x
         runner:
           - ubuntu-latest
           - macos-latest
@@ -61,42 +60,16 @@ jobs:
         run: bazel query "tests(//...)" | xargs -n1 bazel test
         working-directory: tests/bcr_mirror_json
 
-  pkg:
-    runs-on: ubuntu-latest
-    needs:
-      - tests
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Create release archive and notes
-        run: |
-          scripts/package_distro.sh
-
-      - name: Archive release artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: release
-          path: |
-            bazel-bin/distro/*.tar.gz
-            bazel-bin/distro/relnotes.md
-          retention-days: 5
-
   release:
     if: ${{ github.event_name != 'pull_request' }}
     runs-on: ubuntu-latest
-    needs: pkg
+    needs: tests
     permissions:
       contents: write
     steps:
-      - name: Download release artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: release
+      - uses: actions/checkout@v4
 
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
-          body_path: relnotes.md
-          fail_on_unmatched_files: true
-          files: rules_tf-*.tar.gz
+          generate_release_notes: true

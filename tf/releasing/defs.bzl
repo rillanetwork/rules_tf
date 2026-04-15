@@ -10,7 +10,7 @@ def print_rel_notes(
         setup_file = "",
         deps_method = "",
         toolchains_method = "",
-        org = "yanndegat",
+        org = "rillanetwork",
         changelog = None,
         mirror_host = None):
     if not artifact_name:

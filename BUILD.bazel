@@ -14,26 +14,9 @@ license(
 )
 
 exports_files(
-    ["WORKSPACE"],
-)
-
-exports_files(
     glob([
         "*.bzl",
     ]),
-)
-
-filegroup(
-    name = "standard_package",
-    srcs = glob([
-        "*.bzl",
-    ]) + [
-        ".bazelignore",
-        "BUILD.bazel",
-        "LICENSE",
-        "MODULE.bazel",
-    ],
-    visibility = ["//distro:__pkg__"],
 )
 
 toolchain_type(

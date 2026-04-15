@@ -15,7 +15,6 @@ filegroup(
         "BUILD.bazel",
     ],
     visibility = [
-        "//distro:__pkg__",
         "//tf:__pkg__",
     ],
 )
