@@ -81,7 +81,15 @@ def _tf_repositories(ctx):
             tflint_toolchains += [tflint_repo_name]
 
 
-            repo_mirrors[tf_repo_name] = mirror_manifest(parse_mirror_entries(version_tag.mirror))
+            if version_tag.mirror_json:
+                mirror = json.decode(ctx.read(version_tag.mirror_json))
+            else:
+                mirror = version_tag.mirror
+
+            if mirror == None:
+                fail("module {} is missing both mirror and mirror_json attributes; one must be set".format(module.name))
+
+            repo_mirrors[tf_repo_name] = mirror_manifest(parse_mirror_entries(mirror))
 
             if version_tag.use_tofu:
                 tofu_download(
@@ -89,7 +97,7 @@ def _tf_repositories(ctx):
                     version = version_tag.version,
                     os = host_detected_os,
                     arch = host_detected_arch,
-                    mirror = version_tag.mirror,
+                    mirror = mirror,
                 )
                 tofu_toolchains += [tf_repo_name]
             else:
@@ -98,7 +106,7 @@ def _tf_repositories(ctx):
                     version = version_tag.version,
                     os = host_detected_os,
                     arch = host_detected_arch,
-                    mirror = version_tag.mirror,
+                    mirror = mirror,
                 )
                 terraform_toolchains += [tf_repo_name]
 
@@ -124,11 +132,17 @@ _version_tag = tag_class(
         "tflint_version": attr.string(default = TFLINT_VERSION),
         "tfdoc_version": attr.string(default = TFDOC_VERSION),
         "mirror": attr.string_list(
-            mandatory = True,
+            mandatory = False,
             doc = "List of providers to pre-fetch into the local mirror, formatted " +
                   "as '[hostname/]namespace/type:version'. The same source may appear " +
                   "multiple times with different versions; user modules pick whichever " +
                   "version they require via their own required_providers block.",
+        ),
+        "mirror_json": attr.label(
+            allow_single_file = True,
+            doc = "A JSON file containing the provider mirror list. Alternative to " +
+                  "the inline mirror attribute. The file must contain a JSON array " +
+                  "of strings in the same format as the mirror attribute.",
         ),
     },
 )

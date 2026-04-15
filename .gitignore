@@ -6,3 +6,5 @@
 /tests/bcr/MODULE.bazel.lock
 /tests/bcr/.bazeliskrc
 /tests/bcr/.bazelversion
+/tests/bcr_mirror_json/bazel-*
+/tests/bcr_mirror_json/MODULE.bazel.lock
