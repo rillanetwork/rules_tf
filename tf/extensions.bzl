@@ -86,6 +86,9 @@ def _tf_repositories(ctx):
             else:
                 mirror = version_tag.mirror
 
+            if mirror == None:
+                fail("module {} is missing both mirror and mirror_json attributes; one must be set".format(module.name))
+
             repo_mirrors[tf_repo_name] = mirror_manifest(parse_mirror_entries(mirror))
 
             if version_tag.use_tofu:
