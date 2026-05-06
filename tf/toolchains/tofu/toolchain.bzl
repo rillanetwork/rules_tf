@@ -54,6 +54,9 @@ def _download_impl(ctx):
 
     ctx.file("mirror_versions.json", content = json.encode(manifest))
 
+    # See terraform/toolchain.bzl for the rationale on TF_PLUGIN_CACHE_DIR
+    # vs `tofu providers mirror` - the unpacked layout lets downstream init
+    # calls symlink plugins instead of extracting full copies per target.
     versions_tf_jsons = render_mirror_versions_tf_jsons(parsed_entries)
     if len(versions_tf_jsons) > 0:
         for vtf in versions_tf_jsons:
@@ -61,11 +64,13 @@ def _download_impl(ctx):
             res = ctx.execute([
                 "bash",
                 "-c",
-                "mkdir -p mirror; tofu/tofu providers mirror ./mirror > /dev/null",
+                "mkdir -p mirror; rm -rf .terraform .terraform.lock.hcl; TF_PLUGIN_CACHE_DIR=./mirror tofu/tofu init -input=false -backend=false > /dev/null",
             ])
             if res.return_code != 0:
                 fail("failed to populate tofu provider mirror:\n" + res.stderr)
         ctx.delete("versions.tf.json")
+        ctx.delete(".terraform")
+        ctx.delete(".terraform.lock.hcl")
     else:
         ctx.file("mirror/.keep", content = "")
 
