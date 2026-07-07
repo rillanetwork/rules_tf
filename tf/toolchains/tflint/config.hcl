@@ -1,6 +1,6 @@
 config {
     format = "compact"
-    module = true
+    call_module_type = "local"
     force = false
     disabled_by_default = false
 }
