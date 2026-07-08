@@ -76,10 +76,10 @@ def _tf_repositories(ctx):
                 version = version_tag.tflint_version,
                 os = host_detected_os,
                 arch = host_detected_arch,
+                config = version_tag.tflint_config,
             )
 
             tflint_toolchains += [tflint_repo_name]
-
 
             if version_tag.mirror_json:
                 mirror = json.decode(ctx.read(version_tag.mirror_json))
@@ -130,6 +130,11 @@ _version_tag = tag_class(
         "use_tofu": attr.bool(default = False),
         "version": attr.string(mandatory = True),
         "tflint_version": attr.string(default = TFLINT_VERSION),
+        "tflint_config": attr.label(
+            default = "@rules_tf//tf/toolchains/tflint:config.hcl",
+            allow_single_file = True,
+            cfg = "target",
+        ),
         "tfdoc_version": attr.string(default = TFDOC_VERSION),
         "mirror": attr.string_list(
             mandatory = False,
