@@ -112,6 +112,8 @@ def _tflint_download_impl(ctx):
         "-c",
         "mkdir -p tflint_plugins; TFLINT_PLUGIN_DIR=./tflint_plugins tflint/tflint -c ./config.hcl --init",
     ])
+    if res.return_code != 0:
+        fail("tflint --init failed to download plugins (exit {}):\n{}".format(res.return_code, res.stderr))
 
     return
 
