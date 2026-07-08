@@ -1,6 +1,5 @@
 module(
     name = "rules_tf",
-    version = "0.1.0",
     repo_name = "rules_tf",
     compatibility_level = 1,
 )
