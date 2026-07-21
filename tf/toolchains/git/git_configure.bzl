@@ -93,3 +93,14 @@ def experimental_find_system_git_bzlmod(name, workspace_file = None, verbose = F
     if not workspace_file:
         workspace_file = Label("//:MODULE.bazel")
     _find_system_git(name = name, workspace_file = workspace_file, verbose = verbose)
+
+def _git_configure_impl(_mctx):
+    # Bazel 9 no longer reads WORKSPACE.bzlmod, so the system-git repository has
+    # to be created from a module extension instead. The matching
+    # register_toolchains() call lives in MODULE.bazel.
+    experimental_find_system_git_bzlmod(name = "rules_tf_git", verbose = False)
+
+git_configure = module_extension(
+    implementation = _git_configure_impl,
+    doc = "Autoconfigures a @rules_tf_git repository with a toolchain based on the system git.",
+)

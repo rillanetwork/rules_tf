@@ -1,13 +1,12 @@
 module(
     name = "rules_tf",
     repo_name = "rules_tf",
-    compatibility_level = 1,
 )
 
-bazel_dep(name = "rules_pkg", version = "0.9.1")
-bazel_dep(name = "bazel_skylib", version = "1.4.2")
-bazel_dep(name = "platforms", version = "0.0.7")
-bazel_dep(name = "rules_license", version = "0.0.7")
+bazel_dep(name = "rules_pkg", version = "1.0.1")
+bazel_dep(name = "bazel_skylib", version = "1.8.2")
+bazel_dep(name = "platforms", version = "1.0.0")
+bazel_dep(name = "rules_license", version = "1.0.0")
 bazel_dep(name = "package_metadata", version = "0.0.5")
 bazel_dep(name = "rules_python", version = "1.8.5")
 
@@ -30,4 +29,20 @@ use_repo(
 
 register_toolchains(
     "@tf_toolchains//:all",
+)
+
+# Development-only: autoconfigures a git toolchain from the system git, used by
+# //tf/releasing to generate release notes. Previously set up in
+# WORKSPACE.bzlmod, which Bazel 9 no longer reads.
+git_configure = use_extension(
+    "@rules_tf//tf/toolchains/git:git_configure.bzl",
+    "git_configure",
+    dev_dependency = True,
+)
+use_repo(git_configure, "rules_tf_git")
+
+register_toolchains(
+    "@rules_tf_git//:git_auto_toolchain",
+    "//tf/toolchains/git:git_missing_toolchain",
+    dev_dependency = True,
 )
