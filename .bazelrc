@@ -1,5 +1,5 @@
 # This file contains options passed to Bazel when running tests.
-# They are used by Travis CI and by non-Bazel test scripts.
+# They are used by CI and by non-Bazel test scripts.
 
 build:ci --verbose_failures
 build:ci --sandbox_debug
@@ -8,3 +8,6 @@ build:ci --genrule_strategy=standalone
 test:ci --test_strategy=standalone
 
 test --test_output=errors
+
+# Import a git-ignored .bazelrc.local file, if it exists.
+try-import %workspace%/.bazelrc.local

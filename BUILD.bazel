@@ -1,3 +1,6 @@
+load("@package_metadata//licenses:defs.bzl", package_metadata_license = "license")
+load("@package_metadata//purl:purl.bzl", "purl")
+load("@package_metadata//rules:package_metadata.bzl", "package_metadata")
 load("@rules_license//rules:license.bzl", "license")
 
 package(
@@ -13,17 +16,33 @@ license(
     license_text = "LICENSE",
 )
 
-toolchain_type(
-   name = "tflint_toolchain_type",
-   visibility = ["//visibility:public"],
+package_metadata(
+    name = "package_metadata",
+    attributes = [
+        ":package_metadata_license",
+    ],
+    purl = purl.bazel(
+        module_name(),
+        module_version(),
+    ),
+)
+
+package_metadata_license(
+    name = "package_metadata_license",
+    kind = "@package_metadata//licenses/spdx:Apache-2.0",
 )
 
 toolchain_type(
-   name = "tf_toolchain_type",
-   visibility = ["//visibility:public"],
+    name = "tflint_toolchain_type",
+    visibility = ["//visibility:public"],
 )
 
 toolchain_type(
-   name = "tfdoc_toolchain_type",
-   visibility = ["//visibility:public"],
+    name = "tf_toolchain_type",
+    visibility = ["//visibility:public"],
+)
+
+toolchain_type(
+    name = "tfdoc_toolchain_type",
+    visibility = ["//visibility:public"],
 )
