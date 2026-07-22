@@ -24,5 +24,9 @@ tf_root_module(
     module = ":root-mod-a",
     tfvars = {
         "input_var": "from-bazel-tfvars",
+        "regions": ["ap-southeast-1", "ap-south-1"],
+        "enabled": True,
+        "replica_count": 3,
+        "labels": {"team": "platform"},
     },
 )
