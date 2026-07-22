@@ -19,8 +19,13 @@ jobs:
       - name: Install bazelisk
         uses: yuyawk/github-actions/install-bazelisk@v1
 
+      # //tf/toolchains/git requires a registered git toolchain that the root
+      # module does not provide, so //... does not analyze at the root; scope
+      # to the packages with tests and buildable tooling instead.
       - name: Test
-        run: bazel test //... --test_output=errors
+        run: |
+          bazel test //tools/...
+          bazel build //tf_apply/... //lint:buildifier.check
 
   tests:
     strategy:
