@@ -12,6 +12,14 @@ bazel_dep(name = "package_metadata", version = "0.0.5")
 bazel_dep(name = "rules_python", version = "1.8.5")
 
 bazel_dep(name = "buildifier_prebuilt", version = "8.0.1", dev_dependency = True)
+bazel_dep(name = "rules_multitool", version = "1.11.1", dev_dependency = True)
+bazel_dep(name = "rules_shell", version = "0.8.0", dev_dependency = True)
+
+# actionlint + shellcheck binaries for the //.github:actionlint workflow linter.
+# dev_dependency keeps this out of the dependency graph resolved by consumers.
+multitool = use_extension("@rules_multitool//multitool:extension.bzl", "multitool", dev_dependency = True)
+multitool.hub(lockfile = "//tools/multitool:lock.json")
+use_repo(multitool, "multitool")
 
 tf = use_extension("@rules_tf//tf:extensions.bzl", "tf_repositories")
 

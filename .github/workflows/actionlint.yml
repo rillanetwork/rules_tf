@@ -1,0 +1,27 @@
+---
+name: actionlint
+
+on:  # yamllint disable rule:truthy
+  push:
+    branches:
+      - main
+    paths:
+      - .github/**
+  # No branch filter: run on PRs targeting any base branch so stacked PRs
+  # (which target an intermediate branch, not main) are also linted.
+  pull_request:
+    paths:
+      - .github/**
+
+jobs:
+  actionlint:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install bazelisk
+        uses: yuyawk/github-actions/install-bazelisk@v1
+
+      - name: Lint workflows
+        run: bazel test //.github:actionlint --test_output=errors

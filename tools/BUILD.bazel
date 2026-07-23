@@ -33,3 +33,18 @@ py_test(
     imports = ["."],
     main = "run_test.py",
 )
+
+# Tool aliases sourced from multitool (see //tools/multitool:lock.json). These
+# are dev-only: they resolve @multitool, a dev_dependency repo, so consumers of
+# the ruleset must never depend on them. Used by //.github:actionlint.
+alias(
+    name = "actionlint",
+    actual = "@multitool//tools/actionlint",
+    visibility = ["//.github:__pkg__"],
+)
+
+alias(
+    name = "shellcheck",
+    actual = "@multitool//tools/shellcheck",
+    visibility = ["//.github:__pkg__"],
+)

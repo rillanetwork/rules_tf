@@ -1,0 +1,28 @@
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+
+filegroup(
+    name = "workflows",
+    srcs = glob(["workflows/*.yml"]),
+)
+
+sh_test(
+    name = "actionlint",
+    srcs = ["actionlint.sh"],
+    args = [
+        "--bin",
+        "$(rlocationpath //tools:actionlint)",
+        "--config",
+        "$(rlocationpath :actionlint.yaml)",
+        "--shellcheck",
+        "$(rlocationpath //tools:shellcheck)",
+        "--",
+        "$(rlocationpaths :workflows)",
+    ],
+    data = [
+        ":actionlint.yaml",
+        ":workflows",
+        "//tools:actionlint",
+        "//tools:shellcheck",
+    ],
+    deps = ["@bazel_tools//tools/bash/runfiles"],
+)
