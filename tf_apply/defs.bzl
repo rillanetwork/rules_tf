@@ -26,17 +26,24 @@ def tf_root_module(
 
     Args:
         name: The name of the Terraform module.
-        **kwargs: Additional attributes for the module.
+        module: The `tf_module` target to apply.
+        backend: A single-key dict of `{type: config}` describing the Terraform backend.
+        tfvars: A dict of Terraform input variables with arbitrary typed values (strings,
+            numbers, bools, lists, and nested maps). Encoded to JSON and materialized as a
+            `*.auto.tfvars.json` file, so values arrive fully typed in Terraform.
+        tfvars_deps: Mapping of tfvars keys to labels; each resolves to the dependency's
+            file path (relative to the module) at analysis time.
+        output_json: Whether `<name>.plan` should also emit a JSON-formatted plan.
+        tags: Tags to apply to the generated targets.
+        visibility: Visibility of the generated targets.
     """
-
-    # Remove tfvars_deps from kwargs to avoid passing it to _tf_module
 
     tf_vars(
         name = "{}.tfvars".format(name),
         name_prefix = name,
         module = module,
         tfvars_deps = tfvars_deps,
-        tfvars = tfvars,
+        tfvars = json.encode(tfvars),
         visibility = visibility,
     )
 

@@ -41,10 +41,14 @@ def tf_vars_impl(ctx):
     Returns:
         DefaultInfo with the generated tfvars file.
     """
-    tfvars_file = ctx.actions.declare_file("{}.bazel.auto.tfvars.generated".format(ctx.attr.name_prefix))
+    tfvars_file = ctx.actions.declare_file("{}.bazel.auto.tfvars.json.generated".format(ctx.attr.name_prefix))
 
     tfvar_deps = []
-    tfvars = dict(ctx.attr.tfvars)
+
+    # tfvars arrives as a JSON-encoded object so it can carry arbitrary typed
+    # values (lists, bools, numbers, nested maps). Decode it back into a dict
+    # to merge in the label-derived tfvars_deps paths before re-encoding.
+    tfvars = json.decode(ctx.attr.tfvars)
 
     for key, target in ctx.attr.tfvars_deps.items():
         tfvar_deps.append(target.files)
@@ -52,9 +56,11 @@ def tf_vars_impl(ctx):
         rel_path = relative_path(target.files.to_list()[0].short_path, ctx.attr.module.label.package)
         tfvars[key] = rel_path
 
+    # Terraform natively loads *.auto.tfvars.json with full JSON typing, so
+    # lists, bools, numbers, and nested maps all arrive correctly typed.
     ctx.actions.write(
         output = tfvars_file,
-        content = "\n".join(['{}="{}"'.format(key, value) for key, value in tfvars.items()]) + "\n",
+        content = json.encode_indent(tfvars) + "\n",
     )
 
     return [DefaultInfo(files = depset([tfvars_file], transitive = [depset(transitive = tfvar_deps)]))]
@@ -72,9 +78,9 @@ tf_vars = rule(
             mandatory = True,
             doc = "The Tf module to apply.",
         ),
-        "tfvars": attr.string_dict(
-            default = {},
-            doc = "Mapping of tfvars to string values.",
+        "tfvars": attr.string(
+            default = "{}",
+            doc = "JSON-encoded object of Terraform input variables with arbitrary typed values.",
         ),
     },
     # outputs = {"tfvars": "bazel.tfvars"},
@@ -154,14 +160,14 @@ def tf_init_impl(ctx):
     backend_deps = (ctx.attr.backend[DefaultInfo].files.to_list() if ctx.attr.backend else [])
 
     # find file ending with tfvars
-    tfvars_file = [file for file in tfvars_deps if file.short_path.endswith(".tfvars.generated")][0]
+    tfvars_file = [file for file in tfvars_deps if file.short_path.endswith(".tfvars.json.generated")][0]
 
     deps = ctx.attr.module[TfModuleInfo].transitive_srcs.to_list() + tf_toolchain.runtime.deps + tfvars_deps + backend_deps
 
     return [DefaultInfo(
         executable = init_script,
         runfiles = ctx.runfiles(files = deps, symlinks = {
-            ctx.attr.module.label.package + "/bazel.auto.tfvars": tfvars_file,
+            ctx.attr.module.label.package + "/bazel.auto.tfvars.json": tfvars_file,
             ctx.attr.module.label.package + "/bazel.backend.tf": backend_deps[0] if backend_deps else None,
         }),
     )]
@@ -221,7 +227,7 @@ def tf_plan_impl(ctx):
     backend_deps = (ctx.attr.backend[DefaultInfo].files.to_list() if ctx.attr.backend else [])
 
     # find file ending with tfvars
-    tfvars_file = [file for file in tfvars_deps if file.short_path.endswith(".tfvars.generated")][0]
+    tfvars_file = [file for file in tfvars_deps if file.short_path.endswith(".tfvars.json.generated")][0]
 
     # Run the init script
     deps = ctx.attr.module[TfModuleInfo].transitive_srcs.to_list() + tf_toolchain.runtime.deps + tfvars_deps + backend_deps
@@ -229,7 +235,7 @@ def tf_plan_impl(ctx):
     return [DefaultInfo(
         executable = plan_script,
         runfiles = ctx.runfiles(files = deps, symlinks = {
-            ctx.attr.module.label.package + "/bazel.auto.tfvars": tfvars_file,
+            ctx.attr.module.label.package + "/bazel.auto.tfvars.json": tfvars_file,
             ctx.attr.module.label.package + "/bazel.backend.tf": backend_deps[0] if backend_deps else None,
         }),
     )]
@@ -294,14 +300,14 @@ def tf_destroy_impl(ctx):
     tfvars_deps = (ctx.attr.tfvars[DefaultInfo].files.to_list() if ctx.attr.tfvars else [])
     backend_deps = (ctx.attr.backend[DefaultInfo].files.to_list() if ctx.attr.backend else [])
 
-    tfvars_file = [file for file in tfvars_deps if file.short_path.endswith(".tfvars.generated")][0]
+    tfvars_file = [file for file in tfvars_deps if file.short_path.endswith(".tfvars.json.generated")][0]
 
     deps = ctx.attr.module[TfModuleInfo].transitive_srcs.to_list() + tf_toolchain.runtime.deps + tfvars_deps + backend_deps
 
     return [DefaultInfo(
         executable = destroy_script,
         runfiles = ctx.runfiles(files = deps, symlinks = {
-            ctx.attr.module.label.package + "/bazel.auto.tfvars": tfvars_file,
+            ctx.attr.module.label.package + "/bazel.auto.tfvars.json": tfvars_file,
             ctx.attr.module.label.package + "/bazel.backend.tf": backend_deps[0] if backend_deps else None,
         }),
     )]
@@ -359,14 +365,14 @@ def tf_apply_impl(ctx):
     backend_deps = (ctx.attr.backend[DefaultInfo].files.to_list() if ctx.attr.backend else [])
 
     # find file ending with tfvars
-    tfvars_file = [file for file in tfvars_deps if file.short_path.endswith(".tfvars.generated")][0]
+    tfvars_file = [file for file in tfvars_deps if file.short_path.endswith(".tfvars.json.generated")][0]
 
     deps = ctx.attr.module[TfModuleInfo].transitive_srcs.to_list() + tf_toolchain.runtime.deps + tfvars_deps + backend_deps
 
     return [DefaultInfo(
         executable = apply_script,
         runfiles = ctx.runfiles(files = deps, symlinks = {
-            ctx.attr.module.label.package + "/bazel.auto.tfvars": tfvars_file,
+            ctx.attr.module.label.package + "/bazel.auto.tfvars.json": tfvars_file,
             ctx.attr.module.label.package + "/bazel.backend.tf": backend_deps[0] if backend_deps else None,
         }),
     )]
@@ -429,14 +435,14 @@ def tf_cmd_impl(ctx):
     tfvars_deps = (ctx.attr.tfvars[DefaultInfo].files.to_list() if ctx.attr.tfvars else [])
     backend_deps = (ctx.attr.backend[DefaultInfo].files.to_list() if ctx.attr.backend else [])
 
-    tfvars_file = [file for file in tfvars_deps if file.short_path.endswith(".tfvars.generated")][0]
+    tfvars_file = [file for file in tfvars_deps if file.short_path.endswith(".tfvars.json.generated")][0]
 
     deps = ctx.attr.module[TfModuleInfo].transitive_srcs.to_list() + tf_toolchain.runtime.deps + tfvars_deps + backend_deps
 
     return [DefaultInfo(
         executable = cmd_script,
         runfiles = ctx.runfiles(files = deps, symlinks = {
-            ctx.attr.module.label.package + "/bazel.auto.tfvars": tfvars_file,
+            ctx.attr.module.label.package + "/bazel.auto.tfvars.json": tfvars_file,
             ctx.attr.module.label.package + "/bazel.backend.tf": backend_deps[0] if backend_deps else None,
         }),
     )]

@@ -1,0 +1,9 @@
+# actionlint configuration. See
+# https://github.com/rhysd/actionlint/blob/main/docs/config.md
+#
+# rules_tf uses only GitHub-hosted runners and references no repository or org
+# variables, so there is nothing to declare yet. The file exists because the
+# Bazel wrapper (actionlint.sh) always passes -config-file. Add self-hosted
+# runner labels or config-variables here if workflows start using them.
+self-hosted-runner:
+  labels: []
