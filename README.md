@@ -22,7 +22,9 @@ bazel_dep(name = "rules_tf", version = "1.0.0")
 git_override(
     module_name = "rules_tf",
     remote      = "https://github.com/rillanetwork/rules_tf",
-    commit      = "...",
+    tag         = "v1.0.0",
+    # Or pin to an exact commit for immutability:
+    # commit    = "...",
 )
 
 tf = use_extension("@rules_tf//tf:extensions.bzl", "tf_repositories", dev_dependency = True)
