@@ -5,9 +5,9 @@ on:  # yamllint disable rule:truthy
   push:
     branches:
       - main
+  # No branch filter: run on PRs targeting any base branch so stacked PRs
+  # (which target an intermediate branch, not main) are also tested.
   pull_request:
-    branches:
-      - main
 
 jobs:
   root-tests:
