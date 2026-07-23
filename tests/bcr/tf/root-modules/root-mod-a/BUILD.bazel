@@ -1,4 +1,5 @@
 load("@rules_tf//tf:def.bzl", "tf_module")
+load("@rules_tf//tf_apply:defs.bzl", "tf_root_module")
 
 tf_module(
     name = "root-mod-a",
@@ -11,4 +12,17 @@ tf_module(
         "//tf/modules/mod-a",
     ],
     tflint_config = "//tf:tflint-custom-config",
+)
+
+tf_root_module(
+    name = "root-mod-a",
+    backend = {
+        "local": {
+            "path": "terraform.tfstate",
+        },
+    },
+    module = ":root-mod-a",
+    tfvars = {
+        "input_var": "from-bazel-tfvars",
+    },
 )
