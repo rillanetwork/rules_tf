@@ -1,9 +1,10 @@
 load(
     "@rules_tf//tf/toolchains:utils.bzl",
+    "download_provider_to_mirror",
     "get_sha256sum",
     "mirror_manifest",
     "parse_mirror_entries",
-    "render_mirror_versions_tf_jsons",
+    "provider_source_parts",
 )
 
 def _download_impl(ctx):
@@ -33,7 +34,7 @@ def _download_impl(ctx):
     url_sha256sums = url_sha256sums_template.format(version = ctx.attr.version)
 
     ctx.download(
-        url = [ url_sha256sums],
+        url = [url_sha256sums],
         output = "sha256sums",
     )
 
@@ -46,7 +47,7 @@ def _download_impl(ctx):
         url = url,
         sha256 = sha256sum,
         type = "zip",
-        output = "terraform"
+        output = "terraform",
     )
 
     if not res.success:
@@ -54,28 +55,19 @@ def _download_impl(ctx):
 
     ctx.file("mirror_versions.json", content = json.encode(manifest))
 
-    # Terraform treats multiple required_providers entries for the same source
-    # as a combined constraint, so we must mirror one (source, version) at a
-    # time to support multiple versions of a single provider.
+    # Fetch each provider through ctx.download_and_extract (content-addressed by
+    # sha256) so its bytes land in Bazel's --repository_cache and are served
+    # offline on subsequent runs. This replaces shelling out to `terraform
+    # init`, whose subprocess downloads bypassed the repository cache entirely
+    # and re-fetched hundreds of MB of providers on every ephemeral CI run.
     #
-    # `TF_PLUGIN_CACHE_DIR` writes providers in the unpacked filesystem-mirror
-    # layout, which lets downstream `terraform init -plugin-dir=...` symlink
-    # plugins into each module's .terraform/providers/ rather than extracting a
-    # fresh ~750MB copy per init target.
-    versions_tf_jsons = render_mirror_versions_tf_jsons(parsed_entries)
-    if len(versions_tf_jsons) > 0:
-        for vtf in versions_tf_jsons:
-            ctx.file("versions.tf.json", content = json.encode(vtf))
-            res = ctx.execute([
-                "bash",
-                "-c",
-                "mkdir -p mirror; rm -rf .terraform .terraform.lock.hcl; TF_PLUGIN_CACHE_DIR=./mirror terraform/terraform init -input=false -backend=false > /dev/null",
-            ])
-            if res.return_code != 0:
-                fail("failed to populate terraform provider mirror:\n" + res.stderr)
-        ctx.delete("versions.tf.json")
-        ctx.delete(".terraform")
-        ctx.delete(".terraform.lock.hcl")
+    # Each (source, version) is fetched independently, so multiple versions of a
+    # single source coexist in the mirror -- terraform would otherwise AND their
+    # required_providers constraints into an unsatisfiable set.
+    if len(parsed_entries) > 0:
+        for entry in parsed_entries:
+            host, namespace, provider_type = provider_source_parts(entry["source"], "registry.terraform.io")
+            download_provider_to_mirror(ctx, host, namespace, provider_type, entry["version"], ctx.attr.os, ctx.attr.arch)
     else:
         ctx.file("mirror/.keep", content = "")
 
@@ -88,7 +80,7 @@ terraform_download = repository_rule(
         "os": attr.string(mandatory = True),
         "arch": attr.string(mandatory = True),
         "mirror": attr.string_list(mandatory = True),
-    }
+    },
 )
 
 DECLARE_TOOLCHAIN_CHUNK = """

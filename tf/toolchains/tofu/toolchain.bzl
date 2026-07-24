@@ -1,9 +1,10 @@
 load(
     "@rules_tf//tf/toolchains:utils.bzl",
+    "download_provider_to_mirror",
     "get_sha256sum",
     "mirror_manifest",
     "parse_mirror_entries",
-    "render_mirror_versions_tf_jsons",
+    "provider_source_parts",
 )
 
 def _download_impl(ctx):
@@ -33,7 +34,7 @@ def _download_impl(ctx):
     url_sha256sums = url_sha256sums_template.format(version = ctx.attr.version)
 
     ctx.download(
-        url = [ url_sha256sums],
+        url = [url_sha256sums],
         output = "sha256sums",
     )
 
@@ -54,23 +55,15 @@ def _download_impl(ctx):
 
     ctx.file("mirror_versions.json", content = json.encode(manifest))
 
-    # See terraform/toolchain.bzl for the rationale on TF_PLUGIN_CACHE_DIR
-    # vs `tofu providers mirror` - the unpacked layout lets downstream init
-    # calls symlink plugins instead of extracting full copies per target.
-    versions_tf_jsons = render_mirror_versions_tf_jsons(parsed_entries)
-    if len(versions_tf_jsons) > 0:
-        for vtf in versions_tf_jsons:
-            ctx.file("versions.tf.json", content = json.encode(vtf))
-            res = ctx.execute([
-                "bash",
-                "-c",
-                "mkdir -p mirror; rm -rf .terraform .terraform.lock.hcl; TF_PLUGIN_CACHE_DIR=./mirror tofu/tofu init -input=false -backend=false > /dev/null",
-            ])
-            if res.return_code != 0:
-                fail("failed to populate tofu provider mirror:\n" + res.stderr)
-        ctx.delete("versions.tf.json")
-        ctx.delete(".terraform")
-        ctx.delete(".terraform.lock.hcl")
+    # See terraform/toolchain.bzl for the rationale: fetching each provider
+    # through ctx.download_and_extract routes its bytes through Bazel's
+    # --repository_cache so they are served offline on subsequent runs, and the
+    # unpacked layout lets downstream init symlink plugins instead of extracting
+    # full copies per target. tofu resolves providers from its own registry.
+    if len(parsed_entries) > 0:
+        for entry in parsed_entries:
+            host, namespace, provider_type = provider_source_parts(entry["source"], "registry.opentofu.org")
+            download_provider_to_mirror(ctx, host, namespace, provider_type, entry["version"], ctx.attr.os, ctx.attr.arch)
     else:
         ctx.file("mirror/.keep", content = "")
 
