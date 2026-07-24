@@ -14,10 +14,14 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - name: Install bazelisk
-        uses: yuyawk/github-actions/install-bazelisk@v1
+      - name: Setup Bazel
+        uses: bazel-contrib/setup-bazel@0.19.0
+        with:
+          bazelisk-cache: true
+          disk-cache: true
+          repository-cache: true
 
       # //tf/toolchains/git requires a registered git toolchain that the root
       # module does not provide, so //... does not analyze at the root; scope
@@ -40,7 +44,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup
         run: |
@@ -49,8 +53,12 @@ jobs:
           BAZEL_VERSION: ${{matrix.bazel-version}}
         working-directory: tests/bcr
 
-      - name: Install bazelisk
-        uses: yuyawk/github-actions/install-bazelisk@v1
+      - name: Setup Bazel
+        uses: bazel-contrib/setup-bazel@0.19.0
+        with:
+          bazelisk-cache: true
+          disk-cache: true
+          repository-cache: true
 
       - name: Test
         run: bazel query "tests(//...)" | xargs -n1 bazel test

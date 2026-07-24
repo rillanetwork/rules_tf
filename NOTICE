@@ -1,0 +1,11 @@
+rules_tf
+Copyright 2025-2026 Rilla Network
+
+This product is a fork of rules_tf by Yann Degat
+(https://github.com/yanndegat/rules_tf), used under the Apache License,
+Version 2.0.
+
+Portions of this software (the git releasing toolchain under tf/releasing
+and tf/toolchains/git) are derived from the Bazel project
+(https://github.com/bazelbuild), Copyright The Bazel Authors, used under
+the Apache License, Version 2.0.
