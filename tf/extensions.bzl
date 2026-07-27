@@ -3,7 +3,7 @@ load("@rules_tf//tf/toolchains/tflint:toolchain.bzl", "tflint_download")
 load("@rules_tf//tf/toolchains/tfdoc:toolchain.bzl", "tfdoc_download")
 load("@rules_tf//tf/toolchains/tofu:toolchain.bzl", "tofu_download")
 load("@rules_tf//tf:toolchains.bzl", "tf_toolchains")
-load("@rules_tf//tf/toolchains:utils.bzl", "mirror_manifest", "parse_mirror_entries")
+load("@rules_tf//tf/toolchains:utils.bzl", "parse_mirror_entries")
 load("@rules_tf//tf:versions.bzl", "TFDOC_VERSION")
 load("@rules_tf//tf:versions.bzl", "TFLINT_VERSION")
 
@@ -41,7 +41,6 @@ def _tf_repositories(ctx):
     tfdoc_toolchains = []
     terraform_toolchains = []
     tofu_toolchains = []
-    repo_mirrors = {}
 
     for module in ctx.modules:
         for index, version_tag in enumerate(module.tags.download):
@@ -89,7 +88,11 @@ def _tf_repositories(ctx):
             if mirror == None:
                 fail("module {} is missing both mirror and mirror_json attributes; one must be set".format(module.name))
 
-            repo_mirrors[tf_repo_name] = mirror_manifest(parse_mirror_entries(mirror))
+            # Validate at load time so a malformed entry names itself here
+            # rather than deep inside a repository fetch. The resolved manifest
+            # is published by the download repo, which is the only place that
+            # knows what a constraint selected.
+            parse_mirror_entries(mirror)
 
             if version_tag.use_tofu:
                 tofu_download(
@@ -110,17 +113,12 @@ def _tf_repositories(ctx):
                 )
                 terraform_toolchains += [tf_repo_name]
 
-    # repo_mirrors values are list[str]; flatten into a string_list_dict by
-    # joining on "," (entries themselves never contain ",").
-    repo_mirrors_flat = {k: ",".join(v) for k, v in repo_mirrors.items()}
-
     tf_toolchains(
         name = "tf_toolchains",
         tflint_repos = tflint_toolchains,
         tfdoc_repos = tfdoc_toolchains,
         terraform_repos = terraform_toolchains,
         tofu_repos = tofu_toolchains,
-        repo_mirrors = repo_mirrors_flat,
         os = host_detected_os,
         arch = host_detected_arch,
     )

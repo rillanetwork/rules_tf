@@ -10,7 +10,6 @@ def _download_impl(ctx):
     ctx.report_progress("Downloading tofu")
 
     parsed_entries = parse_mirror_entries(ctx.attr.mirror)
-    manifest = mirror_manifest(parsed_entries)
 
     ctx.template(
         "BUILD",
@@ -20,7 +19,6 @@ def _download_impl(ctx):
             "{version}": ctx.attr.version,
             "{os}": ctx.attr.os,
             "{arch}": ctx.attr.arch,
-            "{mirror_versions}": json.encode(manifest),
         },
     )
 
@@ -52,17 +50,25 @@ def _download_impl(ctx):
     if not res.success:
         fail("!failed to dl: ", url)
 
-    ctx.file("mirror_versions.json", content = json.encode(manifest))
-
     # See terraform/toolchain.bzl for the rationale: fetching each provider
     # through ctx.download_and_extract routes its bytes through Bazel's
     # --repository_cache so they are served offline on subsequent runs, and the
     # unpacked layout lets downstream init symlink plugins instead of extracting
     # full copies per target. tofu resolves providers from its own registry.
     if len(parsed_entries) > 0:
-        download_providers_to_mirror(ctx, parsed_entries, "registry.opentofu.org", ctx.attr.os, ctx.attr.arch)
+        resolved_entries = download_providers_to_mirror(ctx, parsed_entries, "registry.opentofu.org", ctx.attr.os, ctx.attr.arch)
     else:
+        resolved_entries = []
         ctx.file("mirror/.keep", content = "")
+
+    # Written after the fetch, not before: a manifest entry may have been a
+    # constraint, and only the resolved pin describes what the mirror holds.
+    manifest = mirror_manifest(resolved_entries)
+    ctx.file("mirror_versions.json", content = json.encode(manifest))
+    ctx.file(
+        "mirror_versions.bzl",
+        content = "MIRROR_VERSIONS = %s\n" % json.encode(manifest),
+    )
 
     return
 

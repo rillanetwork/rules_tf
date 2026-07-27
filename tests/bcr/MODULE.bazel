@@ -22,6 +22,17 @@ tf.download(
         # Prerelease pin: exercises that the mirror accepts full semver
         # ('x.y.z-prerelease'), not just three numeric components.
         "hashicorp/null:3.2.4-alpha.2",
+        # Version constraints resolve against the registry's published list.
+        # Bounded above so the selected version stays stable as new ones ship:
+        # this must pick 4.0.4, not the 4.0.5/4.0.6 that already exist.
+        "hashicorp/tls:>= 4.0.0, < 4.0.5",
+        # Pessimistic constraint: '~> 3.1.0' bounds the patch component, so
+        # this picks the highest 3.1.x rather than the newest 3.x.
+        "hashicorp/random:~> 3.1.0",
+        # A second constraint on a source already constrained above: the
+        # version listing must be fetched once and shared, and the two entries
+        # selecting 4.0.4 must collapse to a single mirror entry.
+        "hashicorp/tls:= 4.0.4",
     ],
 )
 

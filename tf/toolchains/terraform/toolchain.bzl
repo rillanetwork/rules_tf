@@ -10,7 +10,6 @@ def _download_impl(ctx):
     ctx.report_progress("Downloading terraform")
 
     parsed_entries = parse_mirror_entries(ctx.attr.mirror)
-    manifest = mirror_manifest(parsed_entries)
 
     ctx.template(
         "BUILD",
@@ -20,7 +19,6 @@ def _download_impl(ctx):
             "{version}": ctx.attr.version,
             "{os}": ctx.attr.os,
             "{arch}": ctx.attr.arch,
-            "{mirror_versions}": json.encode(manifest),
         },
     )
 
@@ -52,8 +50,6 @@ def _download_impl(ctx):
     if not res.success:
         fail("!failed to dl: ", url)
 
-    ctx.file("mirror_versions.json", content = json.encode(manifest))
-
     # Fetch each provider through ctx.download_and_extract (content-addressed by
     # sha256) so its bytes land in Bazel's --repository_cache and are served
     # offline on subsequent runs. This replaces shelling out to `terraform
@@ -64,9 +60,19 @@ def _download_impl(ctx):
     # single source coexist in the mirror -- terraform would otherwise AND their
     # required_providers constraints into an unsatisfiable set.
     if len(parsed_entries) > 0:
-        download_providers_to_mirror(ctx, parsed_entries, "registry.terraform.io", ctx.attr.os, ctx.attr.arch)
+        resolved_entries = download_providers_to_mirror(ctx, parsed_entries, "registry.terraform.io", ctx.attr.os, ctx.attr.arch)
     else:
+        resolved_entries = []
         ctx.file("mirror/.keep", content = "")
+
+    # Written after the fetch, not before: a manifest entry may have been a
+    # constraint, and only the resolved pin describes what the mirror holds.
+    manifest = mirror_manifest(resolved_entries)
+    ctx.file("mirror_versions.json", content = json.encode(manifest))
+    ctx.file(
+        "mirror_versions.bzl",
+        content = "MIRROR_VERSIONS = %s\n" % json.encode(manifest),
+    )
 
     return
 

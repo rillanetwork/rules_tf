@@ -92,6 +92,11 @@ The JSON file must contain an array of strings in the same
 This is useful when the provider list is generated or shared across multiple
 repositories.
 
+Each `mirror` entry pins an exact version (`hashicorp/random:3.6.0`) or gives a constraint
+(`hashicorp/random:~> 3.1.0`, `hashicorp/tls:>= 4.0.0, < 4.0.5`) resolved against the registry when the mirror is
+built. Pinning is recommended - see [docs/mirror.md](docs/mirror.md) for the version syntax, the prerelease rule,
+and how the resolved set is published.
+
 ### Custom and private registries
 
 Mirror entries may name a registry host other than the default (`registry.terraform.io`, or
