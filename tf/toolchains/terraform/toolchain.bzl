@@ -1,11 +1,9 @@
 load(
     "@rules_tf//tf/toolchains:utils.bzl",
-    "download_provider_to_mirror",
+    "download_providers_to_mirror",
     "get_sha256sum",
     "mirror_manifest",
-    "new_registry_client",
     "parse_mirror_entries",
-    "provider_source_parts",
 )
 
 def _download_impl(ctx):
@@ -66,10 +64,7 @@ def _download_impl(ctx):
     # single source coexist in the mirror -- terraform would otherwise AND their
     # required_providers constraints into an unsatisfiable set.
     if len(parsed_entries) > 0:
-        client = new_registry_client(ctx)
-        for entry in parsed_entries:
-            host, namespace, provider_type = provider_source_parts(entry["source"], "registry.terraform.io")
-            download_provider_to_mirror(ctx, client, host, namespace, provider_type, entry["version"], ctx.attr.os, ctx.attr.arch)
+        download_providers_to_mirror(ctx, parsed_entries, "registry.terraform.io", ctx.attr.os, ctx.attr.arch)
     else:
         ctx.file("mirror/.keep", content = "")
 

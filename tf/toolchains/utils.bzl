@@ -231,106 +231,146 @@ def _providers_base_url(client, host):
     bases[host] = base
     return base
 
-def download_provider_to_mirror(ctx, client, host, namespace, provider_type, version, os, arch):
-    """Fetches one provider into the unpacked filesystem-mirror layout.
+def _provider_label(t):
+    return "%s/%s/%s %s" % (t["host"], t["namespace"], t["type"], t["version"])
 
-    Queries the registry download endpoint for the concrete `download_url` and
-    sha256 `shasum`, then routes the provider zip through
-    `ctx.download_and_extract` so its bytes land in Bazel's `--repository_cache`
-    (keyed by sha) and are served offline on subsequent runs. This replaces the
-    old `terraform init` subprocess, whose downloads bypassed the repository
-    cache entirely.
+def download_providers_to_mirror(ctx, entries, default_host, os, arch):
+    """Fetches every parsed mirror entry into the unpacked filesystem-mirror layout.
+
+    Each provider zip is routed through `ctx.download_and_extract` so its bytes
+    land in Bazel's `--repository_cache` (keyed by sha) and are served offline
+    on subsequent runs. This replaces the old `terraform init` subprocess, whose
+    downloads bypassed the repository cache entirely.
 
     The extract target reproduces the "unpacked" filesystem-mirror layout that
     downstream `terraform init -plugin-dir=<mirror>` consumes, letting init
     symlink the plugin into each module's .terraform/providers/ rather than
     extracting a fresh ~750MB copy per target.
 
+    Work is batched rather than run per provider: every metadata request is put
+    in flight before any is awaited, then every package download likewise. A
+    manifest of N providers costs two rounds of latency instead of 2N.
+
     Only the host platform is mirrored, matching the host-scoped toolchain repo.
     """
-    meta_url = "{base}{ns}/{type}/{version}/download/{os}/{arch}".format(
-        base = _providers_base_url(client, host),
-        ns = namespace,
-        type = provider_type,
-        version = version,
-        os = os,
-        arch = arch,
-    )
+    client = new_registry_client(ctx)
 
-    # The metadata JSON is not content-addressable (its sha is unknown ahead of
-    # time), so this small fetch is always live; only the provider bytes below
-    # are cache-served. Read into a per-entry temp path to avoid collisions.
-    meta_file = "provider_meta_{ns}_{type}_{version}.json".format(
-        ns = namespace,
-        type = provider_type,
-        version = version,
-    )
-    # allow_fail lets the actionable message below surface instead of Bazel's
-    # raw HTTP error, which does not say which mirror entry was at fault.
-    res = ctx.download(
-        url = [meta_url],
-        output = meta_file,
-        allow_fail = True,
-        headers = _auth_headers(client, host),
-    )
-    if not res.success:
-        fail(("failed to fetch provider metadata for %s/%s/%s %s (%s/%s) from %s -- check that " +
-              "the source and version exist in the registry") % (
-            host,
-            namespace,
-            provider_type,
-            version,
-            os,
-            arch,
-            meta_url,
-        ))
+    targets = []
+    for entry in entries:
+        host, namespace, provider_type = provider_source_parts(entry["source"], default_host)
+        targets.append({
+            "host": host,
+            "namespace": namespace,
+            "type": provider_type,
+            "version": entry["version"],
+        })
 
-    meta = json.decode(ctx.read(meta_file))
-    ctx.delete(meta_file)
+    # Service discovery is a blocking prerequisite of every metadata URL and is
+    # memoized per host, so it is resolved up front rather than inside the fan-out.
+    for t in targets:
+        t["base"] = _providers_base_url(client, t["host"])
 
-    for field in ["download_url", "shasum"]:
-        if not meta.get(field):
-            fail("registry response for %s/%s/%s %s (%s) has no '%s'" % (
-                host,
-                namespace,
-                provider_type,
-                version,
-                meta_url,
-                field,
+    ctx.report_progress("Resolving %d provider(s) from registry" % len(targets))
+
+    for t in targets:
+        t["meta_url"] = "{base}{ns}/{type}/{version}/download/{os}/{arch}".format(
+            base = t["base"],
+            ns = t["namespace"],
+            type = t["type"],
+            version = t["version"],
+            os = os,
+            arch = arch,
+        )
+
+        # The metadata JSON is not content-addressable (its sha is unknown ahead
+        # of time), so this small fetch is always live; only the provider bytes
+        # below are cache-served. Each lands in its own path to avoid collisions.
+        t["meta_file"] = "provider_meta_{ns}_{type}_{version}.json".format(
+            ns = t["namespace"],
+            type = t["type"],
+            version = t["version"],
+        )
+
+        # allow_fail lets the actionable messages below surface instead of
+        # Bazel's raw HTTP error, which does not say which entry was at fault.
+        t["pending"] = ctx.download(
+            url = [t["meta_url"]],
+            output = t["meta_file"],
+            allow_fail = True,
+            headers = _auth_headers(client, t["host"]),
+            block = False,
+        )
+
+    for t in targets:
+        if not t["pending"].wait().success:
+            fail(("failed to fetch provider metadata for %s (%s/%s) from %s -- check that the " +
+                  "source and version exist in the registry") % (
+                _provider_label(t),
+                os,
+                arch,
+                t["meta_url"],
             ))
 
-    output = "mirror/{host}/{ns}/{type}/{version}/{os}_{arch}".format(
-        host = host,
-        ns = namespace,
-        type = provider_type,
-        version = version,
-        os = os,
-        arch = arch,
-    )
+        meta = json.decode(ctx.read(t["meta_file"]))
+        ctx.delete(t["meta_file"])
 
-    # Credentials go out only when the package is served by the registry host
-    # itself. Public registries hand back a third-party object store
-    # (releases.hashicorp.com, github.com) and must never receive the token.
-    package_headers = {}
-    if _url_host(meta["download_url"]) == host:
-        package_headers = _auth_headers(client, host)
+        for field in ["download_url", "shasum"]:
+            if not meta.get(field):
+                fail("registry response for %s (%s) has no '%s'" % (
+                    _provider_label(t),
+                    t["meta_url"],
+                    field,
+                ))
 
-    res = ctx.download_and_extract(
-        url = meta["download_url"],
-        sha256 = meta["shasum"],
-        type = "zip",
-        output = output,
-        allow_fail = True,
-        headers = package_headers,
-    )
-    if not res.success:
-        fail("failed to download provider %s/%s/%s %s from %s" % (
-            host,
-            namespace,
-            provider_type,
-            version,
-            meta["download_url"],
-        ))
+        t["meta"] = meta
+
+    if len(targets) > 0:
+        ctx.report_progress("Downloading %d provider(s) into mirror" % len(targets))
+
+    for t in targets:
+        # Credentials go out only when the package is served by the registry
+        # host itself. Public registries hand back a third-party object store
+        # (releases.hashicorp.com, github.com) and must never receive the token.
+        package_headers = {}
+        if _url_host(t["meta"]["download_url"]) == t["host"]:
+            package_headers = _auth_headers(client, t["host"])
+
+        t["output"] = "mirror/{host}/{ns}/{type}/{version}/{os}_{arch}".format(
+            host = t["host"],
+            ns = t["namespace"],
+            type = t["type"],
+            version = t["version"],
+            os = os,
+            arch = arch,
+        )
+
+        # download + extract rather than download_and_extract: only `download`
+        # accepts block = False, and putting every package in flight at once is
+        # worth staging the zip, which is deleted as soon as it is unpacked.
+        # sha256 still makes the bytes content-addressed for --repository_cache.
+        t["archive"] = "provider_pkg_{ns}_{type}_{version}.zip".format(
+            ns = t["namespace"],
+            type = t["type"],
+            version = t["version"],
+        )
+        t["pending"] = ctx.download(
+            url = [t["meta"]["download_url"]],
+            sha256 = t["meta"]["shasum"],
+            output = t["archive"],
+            allow_fail = True,
+            headers = package_headers,
+            block = False,
+        )
+
+    for t in targets:
+        if not t["pending"].wait().success:
+            fail("failed to download provider %s from %s" % (
+                _provider_label(t),
+                t["meta"]["download_url"],
+            ))
+
+        ctx.extract(archive = t["archive"], output = t["output"])
+        ctx.delete(t["archive"])
 
 def mirror_manifest(parsed_entries):
     """Returns the canonical "source@version" strings used as the toolchain manifest."""
