@@ -64,6 +64,17 @@ jobs:
         run: bazel query "tests(//...)" | xargs -n1 bazel test
         working-directory: tests/bcr_mirror_json
 
+
+      - name: Setup tofu tests
+        run: |
+          echo "USE_BAZEL_VERSION=${BAZEL_VERSION}" > .bazeliskrc
+        env:
+          BAZEL_VERSION: ${{matrix.bazel-version}}
+        working-directory: tests/bcr_tofu
+
+      - name: Test tofu toolchain
+        run: bazel query "tests(//...)" | xargs -n1 bazel test
+        working-directory: tests/bcr_tofu
   release:
     if: ${{ github.event_name != 'pull_request' }}
     runs-on: ubuntu-latest

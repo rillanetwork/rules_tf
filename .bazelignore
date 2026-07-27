@@ -1,2 +1,3 @@
 tests/bcr
 tests/bcr_mirror_json
+tests/bcr_tofu

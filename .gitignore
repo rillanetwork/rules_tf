@@ -9,4 +9,8 @@
 /tests/bcr/.bazelversion
 /tests/bcr_mirror_json/bazel-*
 /tests/bcr_mirror_json/MODULE.bazel.lock
+/tests/bcr_mirror_json/.bazeliskrc
+/tests/bcr_tofu/bazel-*
+/tests/bcr_tofu/MODULE.bazel.lock
+/tests/bcr_tofu/.bazeliskrc
 __pycache__/
