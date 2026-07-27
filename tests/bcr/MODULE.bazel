@@ -19,6 +19,9 @@ tf.download(
         "hashicorp/random:3.3.2",
         "hashicorp/random:3.6.0",
         "hashicorp/null:3.1.1",
+        # Prerelease pin: exercises that the mirror accepts full semver
+        # ('x.y.z-prerelease'), not just three numeric components.
+        "hashicorp/null:3.2.4-alpha.2",
     ],
 )
 

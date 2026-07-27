@@ -7,17 +7,56 @@ def get_sha256sum(shasums, file):
 
     return None
 
-def _is_exact_version(version):
-    """True if version is an exact 'x.y.z' pin with all-numeric components."""
-    parts = version.split(".")
-    if len(parts) != 3:
+_DIGITS = "0123456789"
+
+# Semver identifier characters, for prerelease and build-metadata segments.
+_IDENT_CHARS = _DIGITS + "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-"
+
+def _is_numeric(s):
+    if s == "":
         return False
-    for part in parts:
+    for c in s.elems():
+        if c not in _DIGITS:
+            return False
+    return True
+
+def _is_dot_separated_idents(s):
+    """True if s is a non-empty '.'-separated list of semver identifiers."""
+    if s == "":
+        return False
+    for part in s.split("."):
         if part == "":
             return False
         for c in part.elems():
-            if c not in "0123456789":
+            if c not in _IDENT_CHARS:
                 return False
+    return True
+
+def _is_exact_version(version):
+    """True if version is an exact semver pin: 'x.y.z[-prerelease][+build]'.
+
+    Registries publish prerelease versions (e.g. 'hashicorp/aws:6.0.0-beta1'),
+    which are exact pins just as much as a bare 'x.y.z' is -- the check here
+    only needs to reject range/constraint syntax ('>= 1.0', '~> 3.0', ...).
+    """
+    rest = version
+
+    plus = rest.split("+", 1)
+    rest = plus[0]
+    if len(plus) == 2 and not _is_dot_separated_idents(plus[1]):
+        return False
+
+    dash = rest.split("-", 1)
+    core = dash[0]
+    if len(dash) == 2 and not _is_dot_separated_idents(dash[1]):
+        return False
+
+    parts = core.split(".")
+    if len(parts) != 3:
+        return False
+    for part in parts:
+        if not _is_numeric(part):
+            return False
     return True
 
 def parse_mirror_entries(mirror):
@@ -49,7 +88,7 @@ def parse_mirror_entries(mirror):
             fail("mirror entry source must be '[hostname/]namespace/type', was: %s" % source)
 
         if not _is_exact_version(version):
-            fail(("mirror entry version must be an exact 'x.y.z' pin, not a range/constraint " +
+            fail(("mirror entry version must be an exact 'x.y.z[-prerelease][+build]' pin, not a range/constraint " +
                   "(got '%s' in '%s'). The mirror pre-fetches concrete provider versions, so " +
                   "pin the exact version here; module required_providers blocks may still use " +
                   "ranges -- they resolve against the mirror at init time.") % (version, entry))
@@ -107,9 +146,20 @@ def download_provider_to_mirror(ctx, host, namespace, provider_type, version, os
         type = provider_type,
         version = version,
     )
-    res = ctx.download(url = [meta_url], output = meta_file)
+    # allow_fail lets the actionable message below surface instead of Bazel's
+    # raw HTTP error, which does not say which mirror entry was at fault.
+    res = ctx.download(url = [meta_url], output = meta_file, allow_fail = True)
     if not res.success:
-        fail("failed to fetch provider metadata: %s" % meta_url)
+        fail(("failed to fetch provider metadata for %s/%s/%s %s (%s/%s) from %s -- check that " +
+              "the source and version exist in the registry") % (
+            host,
+            namespace,
+            provider_type,
+            version,
+            os,
+            arch,
+            meta_url,
+        ))
 
     meta = json.decode(ctx.read(meta_file))
     ctx.delete(meta_file)
@@ -128,6 +178,7 @@ def download_provider_to_mirror(ctx, host, namespace, provider_type, version, os
         sha256 = meta["shasum"],
         type = "zip",
         output = output,
+        allow_fail = True,
     )
     if not res.success:
         fail("failed to download provider %s/%s/%s %s from %s" % (
