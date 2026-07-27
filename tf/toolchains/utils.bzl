@@ -477,7 +477,7 @@ def _resolve_constraints(ctx, client, targets):
 
     return deduped
 
-def download_providers_to_mirror(ctx, entries, default_host, os, arch):
+def download_providers_to_mirror(ctx, entries, default_host, os, arch, provider_locks, strict_locks):
     """Fetches every parsed mirror entry into the unpacked filesystem-mirror layout.
 
     Each provider zip is routed through `ctx.download_and_extract` so its bytes
@@ -575,6 +575,11 @@ def download_providers_to_mirror(ctx, entries, default_host, os, arch):
 
         t["meta"] = meta
 
+    # Every target now has its package hash, whether it came from the registry
+    # or from the mirror lock, so it can be checked before a byte is fetched.
+    if len(provider_locks) > 0:
+        _verify_against_provider_locks(targets, provider_locks, strict_locks)
+
     if len(targets) > 0:
         ctx.report_progress("Downloading %d provider(s) into mirror" % len(targets))
 
@@ -624,6 +629,106 @@ def download_providers_to_mirror(ctx, entries, default_host, os, arch):
         ctx.delete(t["archive"])
 
     return [{"source": t["source"], "version": t["version"]} for t in targets]
+
+def parse_provider_locks(documents):
+    """Merges `.terraform.lock.hcl` documents into {source@version: {zh hash: True}}.
+
+    A terraform dependency lock file records, per provider, the sha256 of the
+    release package for every platform, as `zh:` entries. Those hashes are
+    produced by `terraform providers lock`, which verifies the registry's
+    SHA256SUMS against the signing keys embedded in the terraform binary -- so
+    a `zh:` value is a hash that survived a signature check, and is a trust
+    root independent of whatever the registry later claims.
+
+    A lock file holds one version per provider, while a mirror may stock
+    several, so several documents merge into one table keyed by source and
+    version. `h1:` hashes are ignored: they cover the extracted directory, not
+    the package, and only for the platforms the lock was generated for.
+
+    The grammar used here is the narrow subset terraform itself emits, not
+    general HCL.
+    """
+    locks = {}
+    for raw in documents:
+        address = ""
+        version = ""
+        hashes = []
+        in_hashes = False
+
+        for line in raw.splitlines():
+            text = line.strip()
+            if text == "" or text.startswith("#"):
+                continue
+
+            if text.startswith("provider \""):
+                address = text.split("\"")[1]
+                version = ""
+                hashes = []
+                in_hashes = False
+                continue
+
+            if address == "":
+                continue
+
+            if in_hashes:
+                if text.startswith("]"):
+                    in_hashes = False
+                elif "\"" in text:
+                    value = text.split("\"")[1]
+                    if value.startswith("zh:"):
+                        hashes.append(value[len("zh:"):])
+                continue
+
+            if text.startswith("hashes"):
+                in_hashes = True
+            elif text.startswith("version"):
+                parts = text.split("\"")
+                if len(parts) >= 2:
+                    version = parts[1]
+            elif text.startswith("}"):
+                if version != "":
+                    key = "%s@%s" % (address, version)
+                    merged = locks.get(key, {})
+                    for h in hashes:
+                        merged[h] = True
+                    locks[key] = merged
+                address = ""
+
+    return locks
+
+def _verify_against_provider_locks(targets, locks, strict):
+    """Checks each package hash against the signature-verified lock hashes."""
+    uncovered = []
+    for t in targets:
+        key = "%s/%s/%s@%s" % (t["host"], t["namespace"], t["type"], t["version"])
+        expected = locks.get(key)
+        if expected == None:
+            uncovered.append(key)
+            continue
+
+        actual = t["meta"]["shasum"]
+        if actual not in expected:
+            fail(("provider %s does not match the dependency lock: sha256 %s is not among the " +
+                  "%d zh: hashes recorded for it. Either the lock is stale, or the registry " +
+                  "served a package that was not the signed one -- do not ignore this without " +
+                  "establishing which.") % (key, actual, len(expected)))
+
+    if len(uncovered) == 0:
+        return
+
+    message = ("no dependency-lock entry covers: %s. Those providers were fetched on the " +
+               "registry's word alone, with no signature-derived hash to check against. Run " +
+               "`terraform providers lock` for them and add the file to provider_locks.") % (
+        ", ".join(uncovered)
+    )
+    if strict:
+        fail(message)
+
+    # A lock file holds one version per provider, so partial coverage is
+    # expected of a multi-version mirror; enumerate the gap rather than
+    # blocking on it. Set provider_locks_strict to make it fatal.
+    print("rules_tf: " + message)  # buildifier: disable=print
+
 
 def mirror_manifest(parsed_entries):
     """Returns the canonical "source@version" strings used as the toolchain manifest."""

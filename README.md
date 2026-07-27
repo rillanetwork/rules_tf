@@ -97,6 +97,10 @@ Each `mirror` entry pins an exact version (`hashicorp/random:3.6.0`) or gives a 
 built. Pinning is recommended - see [docs/mirror.md](docs/mirror.md) for the version syntax, the prerelease rule,
 and how the resolved set is published.
 
+`provider_locks` checks every package against the `zh:` hashes in a `terraform providers lock`-generated
+`.terraform.lock.hcl`, so packages are admitted on a signature-verified hash rather than on the registry's word.
+See [docs/mirror.md](docs/mirror.md#verified-hashes).
+
 ### Custom and private registries
 
 Mirror entries may name a registry host other than the default (`registry.terraform.io`, or

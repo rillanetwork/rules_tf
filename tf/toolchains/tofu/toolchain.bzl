@@ -4,12 +4,14 @@ load(
     "get_sha256sum",
     "mirror_manifest",
     "parse_mirror_entries",
+    "parse_provider_locks",
 )
 
 def _download_impl(ctx):
     ctx.report_progress("Downloading tofu")
 
     parsed_entries = parse_mirror_entries(ctx.attr.mirror)
+    provider_locks = parse_provider_locks(ctx.attr.provider_lock_documents)
 
     ctx.template(
         "BUILD",
@@ -56,7 +58,15 @@ def _download_impl(ctx):
     # unpacked layout lets downstream init symlink plugins instead of extracting
     # full copies per target. tofu resolves providers from its own registry.
     if len(parsed_entries) > 0:
-        resolved_entries = download_providers_to_mirror(ctx, parsed_entries, "registry.opentofu.org", ctx.attr.os, ctx.attr.arch)
+        resolved_entries = download_providers_to_mirror(
+            ctx,
+            parsed_entries,
+            "registry.opentofu.org",
+            ctx.attr.os,
+            ctx.attr.arch,
+            provider_locks,
+            ctx.attr.provider_locks_strict,
+        )
     else:
         resolved_entries = []
         ctx.file("mirror/.keep", content = "")
@@ -79,6 +89,13 @@ tofu_download = repository_rule(
         "os": attr.string(mandatory = True),
         "arch": attr.string(mandatory = True),
         "mirror": attr.string_list(mandatory = True),
+        "provider_lock_documents": attr.string_list(
+            doc = "Raw contents of each .terraform.lock.hcl supplying verified zh: hashes.",
+        ),
+        "provider_locks_strict": attr.bool(
+            default = False,
+            doc = "Fail rather than warn when a mirror entry has no dependency-lock entry.",
+        ),
     },
 )
 

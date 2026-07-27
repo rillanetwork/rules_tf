@@ -94,6 +94,11 @@ def _tf_repositories(ctx):
             # knows what a constraint selected.
             parse_mirror_entries(mirror)
 
+            provider_lock_documents = [
+                ctx.read(lock)
+                for lock in version_tag.provider_locks
+            ]
+
             if version_tag.use_tofu:
                 tofu_download(
                     name = tf_repo_name,
@@ -101,6 +106,8 @@ def _tf_repositories(ctx):
                     os = host_detected_os,
                     arch = host_detected_arch,
                     mirror = mirror,
+                    provider_lock_documents = provider_lock_documents,
+                    provider_locks_strict = version_tag.provider_locks_strict,
                 )
                 tofu_toolchains += [tf_repo_name]
             else:
@@ -110,6 +117,8 @@ def _tf_repositories(ctx):
                     os = host_detected_os,
                     arch = host_detected_arch,
                     mirror = mirror,
+                    provider_lock_documents = provider_lock_documents,
+                    provider_locks_strict = version_tag.provider_locks_strict,
                 )
                 terraform_toolchains += [tf_repo_name]
 
@@ -140,6 +149,19 @@ _version_tag = tag_class(
                   "as '[hostname/]namespace/type:version'. The same source may appear " +
                   "multiple times with different versions; user modules pick whichever " +
                   "version they require via their own required_providers block.",
+        ),
+        "provider_locks": attr.label_list(
+            allow_files = True,
+            doc = "`.terraform.lock.hcl` files whose zh: hashes each mirrored package must " +
+                  "match. Those hashes come from `terraform providers lock`, which verifies " +
+                  "the registry's SHA256SUMS signature against the keys embedded in the " +
+                  "terraform binary, so they are a trust root independent of the registry. " +
+                  "A lock file holds one version per provider; pass several to cover a " +
+                  "multi-version mirror.",
+        ),
+        "provider_locks_strict": attr.bool(
+            default = False,
+            doc = "Fail rather than warn when a mirror entry has no dependency-lock entry.",
         ),
         "mirror_json": attr.label(
             allow_single_file = True,

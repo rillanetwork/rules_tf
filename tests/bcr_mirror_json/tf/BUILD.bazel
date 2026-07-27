@@ -1,1 +1,1 @@
-exports_files(["providers.json"])
+exports_files(["providers.json", "providers.lock.hcl"])
