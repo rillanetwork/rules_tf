@@ -112,7 +112,126 @@ def provider_source_parts(source, default_host):
         return default_host, parts[0], parts[1]
     return parts[0], parts[1], parts[2]
 
-def download_provider_to_mirror(ctx, host, namespace, provider_type, version, os, arch):
+# Service-discovery results for the two default registries. Seeding them keeps
+# the common case free of an extra `.well-known` round trip per build; every
+# other host is discovered for real by `_providers_base_url`.
+_KNOWN_PROVIDER_REGISTRIES = {
+    "registry.terraform.io": "https://registry.terraform.io/v1/providers/",
+    "registry.opentofu.org": "https://registry.opentofu.org/v1/providers/",
+}
+
+def new_registry_client(ctx):
+    """Creates the per-repository-rule registry client.
+
+    Carries the memoized service-discovery and credential lookups so a mirror
+    naming several providers on the same host resolves each only once.
+    """
+    return {
+        "ctx": ctx,
+        "bases": dict(_KNOWN_PROVIDER_REGISTRIES),
+        "tokens": {},
+    }
+
+def _url_host(url):
+    return url.split("://", 1)[-1].split("/", 1)[0]
+
+def _token_env_names(host):
+    """Environment variable names that may hold a token for host.
+
+    Terraform's convention is `TF_TOKEN_<host>` with periods encoded as
+    underscores. Hostnames containing a hyphen have no valid direct spelling,
+    so terraform also accepts a double underscore in its place; that form is
+    tried first when it applies.
+    """
+    encoded = host.replace(".", "_")
+    if "-" in encoded:
+        return ["TF_TOKEN_" + encoded.replace("-", "__"), "TF_TOKEN_" + encoded]
+    return ["TF_TOKEN_" + encoded]
+
+def _credentials_file_token(ctx, host):
+    """Reads a host token from terraform's JSON credentials file, if present."""
+    path = ctx.getenv("TF_CLI_CONFIG_FILE")
+    if path:
+        # A .tfrc is HCL, which Starlark cannot parse; only the JSON
+        # credentials format is understood.
+        if not path.endswith(".json"):
+            return ""
+    else:
+        home = ctx.getenv("HOME")
+        if not home:
+            return ""
+        path = home + "/.terraform.d/credentials.tfrc.json"
+
+    p = ctx.path(path)
+    if not p.exists:
+        return ""
+
+    # watch = "no": the file lives outside the workspace, and rotating a
+    # credential should not by itself invalidate the mirror.
+    creds = json.decode(ctx.read(p, watch = "no")).get("credentials", {})
+    return creds.get(host, {}).get("token", "")
+
+def _auth_headers(client, host):
+    """Authorization header for host, or an empty dict when unauthenticated."""
+    tokens = client["tokens"]
+    if host not in tokens:
+        ctx = client["ctx"]
+        token = ""
+        for name in _token_env_names(host):
+            token = ctx.getenv(name) or ""
+            if token:
+                break
+        if not token:
+            token = _credentials_file_token(ctx, host)
+        tokens[host] = token
+
+    if not tokens[host]:
+        return {}
+    return {"Authorization": "Bearer " + tokens[host]}
+
+def _providers_base_url(client, host):
+    """Returns host's providers.v1 API base URL, via remote service discovery."""
+    bases = client["bases"]
+    if host in bases:
+        return bases[host]
+
+    ctx = client["ctx"]
+    url = "https://%s/.well-known/terraform.json" % host
+    output = "discovery_%s.json" % host.replace(".", "_").replace(":", "_")
+
+    res = ctx.download(
+        url = [url],
+        output = output,
+        allow_fail = True,
+        headers = _auth_headers(client, host),
+    )
+    if not res.success:
+        fail(("failed service discovery for registry host '%s' (%s) -- the host must serve a " +
+              "terraform service-discovery document") % (host, url))
+
+    doc = json.decode(ctx.read(output))
+    ctx.delete(output)
+
+    path = doc.get("providers.v1")
+    if not path:
+        fail(("registry host '%s' does not advertise a provider registry: no 'providers.v1' " +
+              "key in %s") % (host, url))
+
+    # providers.v1 may be an absolute URL or a path relative to the host.
+    if path.startswith("http://") or path.startswith("https://"):
+        base = path
+    elif path.startswith("/"):
+        base = "https://%s%s" % (host, path)
+    else:
+        base = "https://%s/%s" % (host, path)
+
+    if not base.endswith("/"):
+        base += "/"
+
+    bases[host] = base
+    return base
+
+def download_provider_to_mirror(ctx, client, host, namespace, provider_type, version, os, arch):
     """Fetches one provider into the unpacked filesystem-mirror layout.
 
     Queries the registry download endpoint for the concrete `download_url` and
@@ -129,8 +248,8 @@ def download_provider_to_mirror(ctx, host, namespace, provider_type, version, os
 
     Only the host platform is mirrored, matching the host-scoped toolchain repo.
     """
-    meta_url = "https://{host}/v1/providers/{ns}/{type}/{version}/download/{os}/{arch}".format(
-        host = host,
+    meta_url = "{base}{ns}/{type}/{version}/download/{os}/{arch}".format(
+        base = _providers_base_url(client, host),
         ns = namespace,
         type = provider_type,
         version = version,
@@ -148,7 +267,12 @@ def download_provider_to_mirror(ctx, host, namespace, provider_type, version, os
     )
     # allow_fail lets the actionable message below surface instead of Bazel's
     # raw HTTP error, which does not say which mirror entry was at fault.
-    res = ctx.download(url = [meta_url], output = meta_file, allow_fail = True)
+    res = ctx.download(
+        url = [meta_url],
+        output = meta_file,
+        allow_fail = True,
+        headers = _auth_headers(client, host),
+    )
     if not res.success:
         fail(("failed to fetch provider metadata for %s/%s/%s %s (%s/%s) from %s -- check that " +
               "the source and version exist in the registry") % (
@@ -164,6 +288,17 @@ def download_provider_to_mirror(ctx, host, namespace, provider_type, version, os
     meta = json.decode(ctx.read(meta_file))
     ctx.delete(meta_file)
 
+    for field in ["download_url", "shasum"]:
+        if not meta.get(field):
+            fail("registry response for %s/%s/%s %s (%s) has no '%s'" % (
+                host,
+                namespace,
+                provider_type,
+                version,
+                meta_url,
+                field,
+            ))
+
     output = "mirror/{host}/{ns}/{type}/{version}/{os}_{arch}".format(
         host = host,
         ns = namespace,
@@ -173,12 +308,20 @@ def download_provider_to_mirror(ctx, host, namespace, provider_type, version, os
         arch = arch,
     )
 
+    # Credentials go out only when the package is served by the registry host
+    # itself. Public registries hand back a third-party object store
+    # (releases.hashicorp.com, github.com) and must never receive the token.
+    package_headers = {}
+    if _url_host(meta["download_url"]) == host:
+        package_headers = _auth_headers(client, host)
+
     res = ctx.download_and_extract(
         url = meta["download_url"],
         sha256 = meta["shasum"],
         type = "zip",
         output = output,
         allow_fail = True,
+        headers = package_headers,
     )
     if not res.success:
         fail("failed to download provider %s/%s/%s %s from %s" % (

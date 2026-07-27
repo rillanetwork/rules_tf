@@ -92,6 +92,12 @@ The JSON file must contain an array of strings in the same
 This is useful when the provider list is generated or shared across multiple
 repositories.
 
+### Custom and private registries
+
+Mirror entries may name a registry host other than the default (`registry.terraform.io`, or
+`registry.opentofu.org` when `use_tofu = True`), including authenticated private registries. See
+[docs/registries.md](docs/registries.md).
+
 ### Using Tf rules
 
 Once you've imported the rule set, you can then load the tf rules in your `BUILD` files with:

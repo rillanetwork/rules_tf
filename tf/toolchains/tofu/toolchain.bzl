@@ -3,6 +3,7 @@ load(
     "download_provider_to_mirror",
     "get_sha256sum",
     "mirror_manifest",
+    "new_registry_client",
     "parse_mirror_entries",
     "provider_source_parts",
 )
@@ -61,9 +62,10 @@ def _download_impl(ctx):
     # unpacked layout lets downstream init symlink plugins instead of extracting
     # full copies per target. tofu resolves providers from its own registry.
     if len(parsed_entries) > 0:
+        client = new_registry_client(ctx)
         for entry in parsed_entries:
             host, namespace, provider_type = provider_source_parts(entry["source"], "registry.opentofu.org")
-            download_provider_to_mirror(ctx, host, namespace, provider_type, entry["version"], ctx.attr.os, ctx.attr.arch)
+            download_provider_to_mirror(ctx, client, host, namespace, provider_type, entry["version"], ctx.attr.os, ctx.attr.arch)
     else:
         ctx.file("mirror/.keep", content = "")
 
