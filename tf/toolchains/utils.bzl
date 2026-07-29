@@ -849,7 +849,8 @@ def verify_against_provider_locks(packages, locks, strict):
 
     message = ("no dependency-lock entry covers: %s. Those providers were fetched on the " +
                "registry's word alone, with no signature-derived hash to check against. Run " +
-               "`terraform providers lock` for them and add the file to provider_locks.") % (
+               "`terraform providers lock` (or `tofu providers lock`, for a tofu toolchain) " +
+               "for them and add the file to provider_locks.") % (
         ", ".join(uncovered)
     )
     if strict:
