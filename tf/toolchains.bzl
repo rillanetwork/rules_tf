@@ -70,18 +70,10 @@ tf_toolchain = _tf_toolchain
 tfdoc_toolchain = _tfdoc_toolchain
 tflint_toolchain = _tflint_toolchain
 
-_SYMBOL_CHARS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_"
-
-def _mirror_versions_symbol(repo):
-    """A unique Starlark identifier under which to load repo's manifest.
-
-    Repository names carry dots and other characters that cannot appear in an
-    identifier, so they are folded to underscores.
-    """
-    out = ""
-    for c in repo.elems():
-        out += c if c in _SYMBOL_CHARS else "_"
-    return "_MIRROR_VERSIONS_" + out
+def _render_mirror_versions(joined):
+    if joined == "":
+        return "[]"
+    return "[" + ", ".join(['"%s"' % v for v in joined.split(",")]) + "]"
 
 def _tf_toolchains_impl(ctx):
     content = """
@@ -109,23 +101,14 @@ package(default_visibility = ["//visibility:public"])
         )
         content += chunk
 
-    # Each download repo publishes the manifest it actually resolved -- a
-    # mirror entry may have been a constraint, so only the repo that fetched it
-    # knows which version landed. Load it from there rather than passing the
-    # unresolved list down from the extension.
-    loads = ""
-    for repo in ctx.attr.terraform_repos + ctx.attr.tofu_repos:
-        loads += 'load("@{repo}//:mirror_versions.bzl", {symbol} = "MIRROR_VERSIONS")\n'.format(
-            repo = repo,
-            symbol = _mirror_versions_symbol(repo),
-        )
-
+    # Constraints are resolved in the module extension, so it knows the
+    # concrete manifest and passes it straight down here.
     for repo in ctx.attr.terraform_repos:
         chunk = _terraform_declare_toolchain_chunk.format(
             toolchain_repo = repo,
             os = ctx.attr.os,
             arch = ctx.attr.arch,
-            mirror_versions = _mirror_versions_symbol(repo),
+            mirror_versions = _render_mirror_versions(ctx.attr.repo_mirrors.get(repo, "")),
         )
         content += chunk
 
@@ -134,11 +117,11 @@ package(default_visibility = ["//visibility:public"])
             toolchain_repo = repo,
             os = ctx.attr.os,
             arch = ctx.attr.arch,
-            mirror_versions = _mirror_versions_symbol(repo),
+            mirror_versions = _render_mirror_versions(ctx.attr.repo_mirrors.get(repo, "")),
         )
         content += chunk
 
-    ctx.file("BUILD.bazel", loads + content, executable = False)
+    ctx.file("BUILD.bazel", content, executable = False)
 
 tf_toolchains = repository_rule(
     implementation = _tf_toolchains_impl,
@@ -147,6 +130,9 @@ tf_toolchains = repository_rule(
         "tfdoc_repos": attr.string_list(mandatory = True),
         "terraform_repos": attr.string_list(mandatory = True),
         "tofu_repos": attr.string_list(mandatory = True),
+        "repo_mirrors": attr.string_dict(
+            doc = "Per-repo resolved manifest: repo name -> comma-joined 'source@version' entries.",
+        ),
         "os": attr.string(mandatory = True),
         "arch": attr.string(mandatory = True),
     },

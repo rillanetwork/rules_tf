@@ -1,0 +1,37 @@
+module(
+    name = "rules_tf_bcr_facts_tests",
+    version = "0.0.1",
+)
+
+bazel_dep(name = "rules_tf", version = "", repo_name = "rules_tf")
+local_path_override(
+    module_name = "rules_tf",
+    path = "../..",
+)
+
+# The facts in MODULE.bazel.lock are only honoured by the Bazel release that
+# wrote them, hence the pinned .bazelversion.
+tf = use_extension("@rules_tf//tf:extensions.bzl", "tf_repositories")
+
+# Every mirror entry names a registry host that does not resolve, and one is a
+# constraint rather than a pin. The build only succeeds if the extension facts
+# committed in MODULE.bazel.lock answer both questions -- which version the
+# constraint selects, and where each package lives -- so that service discovery
+# and the metadata request never happen. What remains is the content-addressed
+# package downloads, which --repository_cache can serve.
+tf.download(
+    mirror = [
+        "unreachable.invalid/hashicorp/random:3.3.2",
+        "unreachable.invalid/hashicorp/null:3.1.1",
+        "unreachable.invalid/hashicorp/random:~> 3.1.0",
+    ],
+    tfdoc_version = "0.19.0",
+    tflint_version = "0.53.0",
+    use_tofu = False,
+    version = "1.9.5",
+)
+use_repo(tf, "tf_toolchains")
+
+register_toolchains(
+    "@tf_toolchains//:all",
+)

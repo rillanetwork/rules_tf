@@ -229,10 +229,10 @@ def parse_mirror_entries(mirror):
 
     A version is either an exact 'x.y.z[-prerelease][+build]' pin or a
     constraint (`>= 1.0`, `~> 3.0`, `>= 1.0, < 2.0`). Constraints are resolved
-    against the registry's published version list when the mirror is built.
-    Pinning is still the recommended form: a constraint lets mirror contents
-    drift with no change to the manifest, so the resolved set is recorded in
-    the toolchain's `mirror_versions` for a build to inspect.
+    against the registry's published version list when the mirror is built, and
+    the selection is then held by an extension fact in `MODULE.bazel.lock`, so
+    it does not drift on the next evaluation. Refresh a constraint deliberately
+    with `bazel mod deps --lockfile_mode=refresh`.
     """
     seen = {}
     parsed = []
@@ -282,10 +282,13 @@ _KNOWN_PROVIDER_REGISTRIES = {
 }
 
 def new_registry_client(ctx):
-    """Creates the per-repository-rule registry client.
+    """Creates the registry client, over either a module_ctx or a repository_ctx.
 
     Carries the memoized service-discovery and credential lookups so a mirror
-    naming several providers on the same host resolves each only once.
+    naming several providers on the same host resolves each only once. The
+    module extension uses the full client to resolve providers; the download
+    repo constructs one solely for `auth_headers`, since a token must never be
+    passed down as a repo attribute where the lockfile would record it.
     """
     return {
         "ctx": ctx,
@@ -293,7 +296,7 @@ def new_registry_client(ctx):
         "tokens": {},
     }
 
-def _url_host(url):
+def url_host(url):
     return url.split("://", 1)[-1].split("/", 1)[0]
 
 def _token_env_names(host):
@@ -332,7 +335,7 @@ def _credentials_file_token(ctx, host):
     creds = json.decode(ctx.read(p, watch = "no")).get("credentials", {})
     return creds.get(host, {}).get("token", "")
 
-def _auth_headers(client, host):
+def auth_headers(client, host):
     """Authorization header for host, or an empty dict when unauthenticated."""
     tokens = client["tokens"]
     if host not in tokens:
@@ -364,14 +367,15 @@ def _providers_base_url(client, host):
         url = [url],
         output = output,
         allow_fail = True,
-        headers = _auth_headers(client, host),
+        headers = auth_headers(client, host),
     )
     if not res.success:
         fail(("failed service discovery for registry host '%s' (%s) -- the host must serve a " +
               "terraform service-discovery document") % (host, url))
 
+    # Not cleaned up: module_ctx has no delete(), and these land in the
+    # extension's own working directory rather than in any repo.
     doc = json.decode(ctx.read(output))
-    ctx.delete(output)
 
     path = doc.get("providers.v1")
     if not path:
@@ -433,7 +437,7 @@ def _resolve_constraints(ctx, client, targets):
             url = [listing["url"]],
             output = listing["file"],
             allow_fail = True,
-            headers = _auth_headers(client, listing["host"]),
+            headers = auth_headers(client, listing["host"]),
             block = False,
         )
 
@@ -442,7 +446,6 @@ def _resolve_constraints(ctx, client, targets):
             fail("failed to list versions of %s from %s" % (key, listing["url"]))
 
         doc = json.decode(ctx.read(listing["file"]))
-        ctx.delete(listing["file"])
         listing["available"] = [v["version"] for v in doc.get("versions", []) if v.get("version")]
 
     for t in constrained:
@@ -477,53 +480,121 @@ def _resolve_constraints(ctx, client, targets):
 
     return deduped
 
-def download_providers_to_mirror(ctx, entries, default_host, os, arch, provider_locks, strict_locks):
-    """Fetches every parsed mirror entry into the unpacked filesystem-mirror layout.
+# Fact keys are unversioned, and changing the shape of one (or of its value)
+# is therefore a breaking change to any lockfile already carrying them. Do it
+# by adopting `module_extension(facts_version = ...)`, which invalidates the
+# old facts for us -- and note that raises the Bazel floor to 9.2.
+def resolve_fact_key(host, namespace, provider_type, spec):
+    """Fact key under which a constraint's selected version is remembered."""
+    return "resolve/{host}/{ns}/{type}/{spec}".format(
+        host = host,
+        ns = namespace,
+        type = provider_type,
+        spec = spec,
+    )
 
-    Each provider zip is routed through `ctx.download_and_extract` so its bytes
-    land in Bazel's `--repository_cache` (keyed by sha) and are served offline
-    on subsequent runs. This replaces the old `terraform init` subprocess, whose
-    downloads bypassed the repository cache entirely.
+def package_fact_key(host, namespace, provider_type, version, platform):
+    """Fact key under which one platform's package coordinates are remembered."""
+    return "package/{host}/{ns}/{type}/{version}/{platform}".format(
+        host = host,
+        ns = namespace,
+        type = provider_type,
+        version = version,
+        platform = platform,
+    )
 
-    The extract target reproduces the "unpacked" filesystem-mirror layout that
-    downstream `terraform init -plugin-dir=<mirror>` consumes, letting init
-    symlink the plugin into each module's .terraform/providers/ rather than
-    extracting a fresh ~750MB copy per target.
+# The platforms a tf toolchain can run on, and so the only ones whose packages
+# can ever have been resolved. Enumerated because `module_ctx.facts` is a
+# lookup with no iteration: carrying another host's coordinates forward means
+# asking for each key by name.
+MIRROR_PLATFORMS = [
+    "linux_amd64",
+    "linux_arm64",
+    "darwin_amd64",
+    "darwin_arm64",
+]
 
-    Work is batched rather than run per provider: every metadata request is put
-    in flight before any is awaited, then every package download likewise. A
+def resolve_providers(ctx, entries, default_host, os, arch, facts):
+    """Resolves every mirror entry to a concrete version, package URL and sha256.
+
+    This runs in the module extension rather than in the download repo, for two
+    reasons. The coordinates it produces are passed to the repo rule as plain
+    attributes, so `MODULE.bazel.lock` records in `generatedRepoSpecs` exactly
+    which version a constraint selected. And what it learns from the registry is
+    returned as extension facts, which bzlmod persists in that same lockfile --
+    so a second evaluation resolves from the lockfile and reaches the registry
+    not at all.
+
+    `facts` is the previously persisted table (`module_ctx.facts`). A hit on a
+    `resolve/` key skips the version listing; a hit on a `package/` key skips
+    the metadata request. A miss is not an error: that entry resolves live, and
+    its result joins the facts returned to the caller.
+
+    Work is batched rather than run per provider: every version listing is put
+    in flight before any is awaited, then every metadata request likewise, so a
     manifest of N providers costs two rounds of latency instead of 2N.
 
-    Only the host platform is mirrored, matching the host-scoped toolchain repo.
+    Only the host platform is resolved, matching the host-scoped toolchain repo.
+    Coordinates already recorded for the other platforms are carried through
+    untouched, so building on each host in turn accumulates one lockfile
+    covering them all -- the property terraform gets from a multi-platform
+    `.terraform.lock.hcl`.
 
-    Returns the resolved entries as {"source", "version"} dicts with every
-    constraint replaced by the concrete version it selected, which is what the
-    toolchain publishes as its mirror manifest.
+    Returns (packages, facts), where packages carries the concrete coordinates
+    for this platform and facts is the table to persist.
     """
     client = new_registry_client(ctx)
 
     targets = []
     for entry in entries:
         host, namespace, provider_type = provider_source_parts(entry["source"], default_host)
-        targets.append({
+        t = {
             "source": entry["source"],
             "host": host,
             "namespace": namespace,
             "type": provider_type,
             "version": entry["version"],
             "is_exact": entry["is_exact"],
-        })
+        }
 
-    # Service discovery is a blocking prerequisite of every metadata URL and is
-    # memoized per host, so it is resolved up front rather than inside the fan-out.
+        # A constraint is remembered against the spec as written, since that is
+        # the question whose answer is being recorded. Exact pins ask nothing.
+        if not t["is_exact"]:
+            t["spec"] = entry["version"]
+            remembered = facts.get(resolve_fact_key(host, namespace, provider_type, t["spec"]))
+            if remembered:
+                t["version"] = remembered["version"]
+                t["is_exact"] = True
+
+        targets.append(t)
+
+    # Service discovery is a blocking prerequisite of every registry URL and is
+    # memoized per host, so it is resolved up front rather than inside the
+    # fan-out -- but only for targets that still have a question to ask.
     for t in targets:
-        t["base"] = _providers_base_url(client, t["host"])
+        if not t["is_exact"]:
+            t["base"] = _providers_base_url(client, t["host"])
 
     targets = _resolve_constraints(ctx, client, targets)
 
-    ctx.report_progress("Resolving %d provider(s) from registry" % len(targets))
-
+    platform = "%s_%s" % (os, arch)
     for t in targets:
+        t["meta"] = facts.get(package_fact_key(
+            t["host"],
+            t["namespace"],
+            t["type"],
+            t["version"],
+            platform,
+        ))
+
+    unresolved = [t for t in targets if not t["meta"]]
+    if len(unresolved) > 0:
+        ctx.report_progress("Resolving %d provider(s) from registry" % len(unresolved))
+
+    for t in unresolved:
+        if "base" not in t:
+            t["base"] = _providers_base_url(client, t["host"])
+
         t["meta_url"] = "{base}{ns}/{type}/{version}/download/{os}/{arch}".format(
             base = t["base"],
             ns = t["namespace"],
@@ -534,9 +605,11 @@ def download_providers_to_mirror(ctx, entries, default_host, os, arch, provider_
         )
 
         # The metadata JSON is not content-addressable (its sha is unknown ahead
-        # of time), so this small fetch is always live; only the provider bytes
-        # below are cache-served. Each lands in its own path to avoid collisions.
-        t["meta_file"] = "provider_meta_{ns}_{type}_{version}.json".format(
+        # of time), so this small fetch is live the first time it is asked for;
+        # thereafter the fact answers it. Each lands in its own path to avoid
+        # collisions between two versions of one provider.
+        t["meta_file"] = "provider_meta_{host}_{ns}_{type}_{version}.json".format(
+            host = t["host"].replace(".", "_").replace(":", "_"),
             ns = t["namespace"],
             type = t["type"],
             version = t["version"],
@@ -548,11 +621,11 @@ def download_providers_to_mirror(ctx, entries, default_host, os, arch, provider_
             url = [t["meta_url"]],
             output = t["meta_file"],
             allow_fail = True,
-            headers = _auth_headers(client, t["host"]),
+            headers = auth_headers(client, t["host"]),
             block = False,
         )
 
-    for t in targets:
+    for t in unresolved:
         if not t["pending"].wait().success:
             fail(("failed to fetch provider metadata for %s (%s/%s) from %s -- check that the " +
                   "source and version exist in the registry") % (
@@ -563,7 +636,6 @@ def download_providers_to_mirror(ctx, entries, default_host, os, arch, provider_
             ))
 
         meta = json.decode(ctx.read(t["meta_file"]))
-        ctx.delete(t["meta_file"])
 
         for field in ["download_url", "shasum"]:
             if not meta.get(field):
@@ -573,62 +645,121 @@ def download_providers_to_mirror(ctx, entries, default_host, os, arch, provider_
                     field,
                 ))
 
-        t["meta"] = meta
+        t["meta"] = {"download_url": meta["download_url"], "sha256": meta["shasum"]}
 
-    # Every target now has its package hash, whether it came from the registry
-    # or from the mirror lock, so it can be checked before a byte is fetched.
-    if len(provider_locks) > 0:
-        _verify_against_provider_locks(targets, provider_locks, strict_locks)
-
-    if len(targets) > 0:
-        ctx.report_progress("Downloading %d provider(s) into mirror" % len(targets))
-
+    # Built fresh rather than merged into what was read: `module_ctx.facts` is a
+    # lookup, not an iterable, so the previous table cannot be enumerated. The
+    # result is that the persisted facts track the manifest exactly -- an entry
+    # dropped from the mirror takes its facts with it instead of silting up.
+    new_facts = {}
+    packages = []
     for t in targets:
+        new_facts[package_fact_key(
+            t["host"],
+            t["namespace"],
+            t["type"],
+            t["version"],
+            platform,
+        )] = t["meta"]
+
+        # Whatever the other hosts resolved for this same version stays put.
+        for other in MIRROR_PLATFORMS:
+            if other == platform:
+                continue
+            key = package_fact_key(t["host"], t["namespace"], t["type"], t["version"], other)
+            remembered = facts.get(key)
+            if remembered:
+                new_facts[key] = remembered
+
+        spec = t.get("spec")
+        if spec:
+            new_facts[resolve_fact_key(t["host"], t["namespace"], t["type"], spec)] = {
+                "version": t["version"],
+            }
+
+        packages.append({
+            "source": t["source"],
+            "host": t["host"],
+            "namespace": t["namespace"],
+            "type": t["type"],
+            "version": t["version"],
+            "download_url": t["meta"]["download_url"],
+            "sha256": t["meta"]["sha256"],
+        })
+
+    return packages, new_facts
+
+def download_providers(ctx, packages, os, arch):
+    """Unpacks every resolved package into the filesystem-mirror layout.
+
+    Every coordinate arrives already resolved, so this reaches no registry: it
+    fetches known URLs against known hashes. That makes each package
+    content-addressed for `--repository_cache`, so a warm cache serves the whole
+    mirror offline.
+
+    The extract target reproduces the "unpacked" filesystem-mirror layout that
+    downstream `terraform init -plugin-dir=<mirror>` consumes, letting init
+    symlink the plugin into each module's .terraform/providers/ rather than
+    extracting a fresh ~750MB copy per target.
+    """
+    if len(packages) == 0:
+        ctx.file("mirror/.keep", content = "")
+        return
+
+    ctx.report_progress("Downloading %d provider(s) into mirror" % len(packages))
+
+    # Built solely for the credential lookup: a package served by the registry
+    # host itself may need a token, which cannot be passed down as an attribute
+    # without the lockfile recording it.
+    client = new_registry_client(ctx)
+
+    staged = []
+    for p in packages:
         # Credentials go out only when the package is served by the registry
         # host itself. Public registries hand back a third-party object store
         # (releases.hashicorp.com, github.com) and must never receive the token.
         package_headers = {}
-        if _url_host(t["meta"]["download_url"]) == t["host"]:
-            package_headers = _auth_headers(client, t["host"])
-
-        t["output"] = "mirror/{host}/{ns}/{type}/{version}/{os}_{arch}".format(
-            host = t["host"],
-            ns = t["namespace"],
-            type = t["type"],
-            version = t["version"],
-            os = os,
-            arch = arch,
-        )
+        if url_host(p["download_url"]) == p["host"]:
+            package_headers = auth_headers(client, p["host"])
 
         # download + extract rather than download_and_extract: only `download`
         # accepts block = False, and putting every package in flight at once is
         # worth staging the zip, which is deleted as soon as it is unpacked.
-        # sha256 still makes the bytes content-addressed for --repository_cache.
-        t["archive"] = "provider_pkg_{ns}_{type}_{version}.zip".format(
-            ns = t["namespace"],
-            type = t["type"],
-            version = t["version"],
+        archive = "provider_pkg_{ns}_{type}_{version}.zip".format(
+            ns = p["namespace"],
+            type = p["type"],
+            version = p["version"],
         )
-        t["pending"] = ctx.download(
-            url = [t["meta"]["download_url"]],
-            sha256 = t["meta"]["shasum"],
-            output = t["archive"],
-            allow_fail = True,
-            headers = package_headers,
-            block = False,
-        )
+        staged.append({
+            "package": p,
+            "archive": archive,
+            "output": "mirror/{host}/{ns}/{type}/{version}/{os}_{arch}".format(
+                host = p["host"],
+                ns = p["namespace"],
+                type = p["type"],
+                version = p["version"],
+                os = os,
+                arch = arch,
+            ),
+            "pending": ctx.download(
+                url = [p["download_url"]],
+                sha256 = p["sha256"],
+                output = archive,
+                allow_fail = True,
+                headers = package_headers,
+                block = False,
+            ),
+        })
 
-    for t in targets:
-        if not t["pending"].wait().success:
+    for s in staged:
+        if not s["pending"].wait().success:
             fail("failed to download provider %s from %s" % (
-                _provider_label(t),
-                t["meta"]["download_url"],
+                _provider_label(s["package"]),
+                s["package"]["download_url"],
             ))
 
-        ctx.extract(archive = t["archive"], output = t["output"])
-        ctx.delete(t["archive"])
-
-    return [{"source": t["source"], "version": t["version"]} for t in targets]
+        ctx.extract(archive = s["archive"], output = s["output"])
+        ctx.delete(s["archive"])
 
 def parse_provider_locks(documents):
     """Merges `.terraform.lock.hcl` documents into {source@version: {zh hash: True}}.
@@ -696,17 +827,17 @@ def parse_provider_locks(documents):
 
     return locks
 
-def _verify_against_provider_locks(targets, locks, strict):
+def verify_against_provider_locks(packages, locks, strict):
     """Checks each package hash against the signature-verified lock hashes."""
     uncovered = []
-    for t in targets:
+    for t in packages:
         key = "%s/%s/%s@%s" % (t["host"], t["namespace"], t["type"], t["version"])
         expected = locks.get(key)
         if expected == None:
             uncovered.append(key)
             continue
 
-        actual = t["meta"]["shasum"]
+        actual = t["sha256"]
         if actual not in expected:
             fail(("provider %s does not match the dependency lock: sha256 %s is not among the " +
                   "%d zh: hashes recorded for it. Either the lock is stale, or the registry " +
@@ -728,7 +859,6 @@ def _verify_against_provider_locks(targets, locks, strict):
     # expected of a multi-version mirror; enumerate the gap rather than
     # blocking on it. Set provider_locks_strict to make it fatal.
     print("rules_tf: " + message)  # buildifier: disable=print
-
 
 def mirror_manifest(parsed_entries):
     """Returns the canonical "source@version" strings used as the toolchain manifest."""

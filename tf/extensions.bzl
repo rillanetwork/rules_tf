@@ -3,7 +3,14 @@ load("@rules_tf//tf/toolchains/tflint:toolchain.bzl", "tflint_download")
 load("@rules_tf//tf/toolchains/tfdoc:toolchain.bzl", "tfdoc_download")
 load("@rules_tf//tf/toolchains/tofu:toolchain.bzl", "tofu_download")
 load("@rules_tf//tf:toolchains.bzl", "tf_toolchains")
-load("@rules_tf//tf/toolchains:utils.bzl", "parse_mirror_entries")
+load(
+    "@rules_tf//tf/toolchains:utils.bzl",
+    "mirror_manifest",
+    "parse_mirror_entries",
+    "parse_provider_locks",
+    "resolve_providers",
+    "verify_against_provider_locks",
+)
 load("@rules_tf//tf:versions.bzl", "TFDOC_VERSION")
 load("@rules_tf//tf:versions.bzl", "TFLINT_VERSION")
 
@@ -34,6 +41,11 @@ def _repo_name(*, module, tool, index, suffix = ""):
         suffix = suffix,
     )
 
+_DEFAULT_REGISTRY = {
+    True: "registry.opentofu.org",
+    False: "registry.terraform.io",
+}
+
 def _tf_repositories(ctx):
     host_detected_os, host_detected_arch = detect_host_platform(ctx)
 
@@ -41,6 +53,11 @@ def _tf_repositories(ctx):
     tfdoc_toolchains = []
     terraform_toolchains = []
     tofu_toolchains = []
+    repo_mirrors = {}
+
+    # Accumulated across every download tag and handed back at the end, for
+    # bzlmod to persist in MODULE.bazel.lock.
+    facts = {}
 
     for module in ctx.modules:
         for index, version_tag in enumerate(module.tags.download):
@@ -88,38 +105,46 @@ def _tf_repositories(ctx):
             if mirror == None:
                 fail("module {} is missing both mirror and mirror_json attributes; one must be set".format(module.name))
 
-            # Validate at load time so a malformed entry names itself here
-            # rather than deep inside a repository fetch. The resolved manifest
-            # is published by the download repo, which is the only place that
-            # knows what a constraint selected.
-            parse_mirror_entries(mirror)
+            # The concrete coordinates below become repo attributes, which
+            # the lockfile records verbatim in generatedRepoSpecs, and
+            # everything learned from the registry comes back as facts, which
+            # the lockfile persists.
+            packages, tag_facts = resolve_providers(
+                ctx,
+                parse_mirror_entries(mirror),
+                _DEFAULT_REGISTRY[version_tag.use_tofu],
+                host_detected_os,
+                host_detected_arch,
+                ctx.facts,
+            )
+            facts.update(tag_facts)
 
-            provider_lock_documents = [
+            # Every package hash is known before a byte is fetched, so the
+            # signature-derived check runs here too.
+            provider_locks = parse_provider_locks([
                 ctx.read(lock)
                 for lock in version_tag.provider_locks
-            ]
-
-            if version_tag.use_tofu:
-                tofu_download(
-                    name = tf_repo_name,
-                    version = version_tag.version,
-                    os = host_detected_os,
-                    arch = host_detected_arch,
-                    mirror = mirror,
-                    provider_lock_documents = provider_lock_documents,
-                    provider_locks_strict = version_tag.provider_locks_strict,
+            ])
+            if len(provider_locks) > 0:
+                verify_against_provider_locks(
+                    packages,
+                    provider_locks,
+                    version_tag.provider_locks_strict,
                 )
+
+            repo_mirrors[tf_repo_name] = mirror_manifest(packages)
+
+            download = tofu_download if version_tag.use_tofu else terraform_download
+            download(
+                name = tf_repo_name,
+                version = version_tag.version,
+                os = host_detected_os,
+                arch = host_detected_arch,
+                providers_json = json.encode(packages),
+            )
+            if version_tag.use_tofu:
                 tofu_toolchains += [tf_repo_name]
             else:
-                terraform_download(
-                    name = tf_repo_name,
-                    version = version_tag.version,
-                    os = host_detected_os,
-                    arch = host_detected_arch,
-                    mirror = mirror,
-                    provider_lock_documents = provider_lock_documents,
-                    provider_locks_strict = version_tag.provider_locks_strict,
-                )
                 terraform_toolchains += [tf_repo_name]
 
     tf_toolchains(
@@ -128,9 +153,19 @@ def _tf_repositories(ctx):
         tfdoc_repos = tfdoc_toolchains,
         terraform_repos = terraform_toolchains,
         tofu_repos = tofu_toolchains,
+        # string_dict, so the manifest is joined on "," (a "source@version"
+        # entry never contains one).
+        repo_mirrors = {k: ",".join(v) for k, v in repo_mirrors.items()},
         os = host_detected_os,
         arch = host_detected_arch,
     )
+
+    # reproducible: every network answer this extension depends on is now held
+    # in `facts`, so a second evaluation with the same manifest defines exactly
+    # the same repos without asking the registry anything. That keeps the
+    # extension out of the lockfile's moduleExtensions section; the facts it
+    # returns are persisted separately.
+    return ctx.extension_metadata(reproducible = True, facts = facts)
 
 _version_tag = tag_class(
     attrs = {

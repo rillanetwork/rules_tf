@@ -3,7 +3,7 @@
 > **Note:** This is a significant fork of [yanndegat/rules_tf](https://github.com/yanndegat/rules_tf)
 > with additions including multi-version provider mirrors, `mirror_json` support,
 > inline provider declarations, and rules to init/plan/apply root modules
-> (absorbed from the former `rules_tf_apply` module). Requires Bazel 8 or later.
+> (absorbed from the former `rules_tf_apply` module). Requires Bazel 9 or later.
 
 The Tf rules are useful to validate, lint, format, plan and apply terraform code.
 
@@ -12,6 +12,12 @@ They can typically be used in a terraform monorepo of modules to lint, run valid
 # Why "Tf" and not "Terraform"
 
 Because now you can either use "tofu" or "terraform" binary.
+
+## Requirements
+
+**Bazel 9 or later**, enforced by `bazel_compatibility = [">=9.0.0"]`. The provider mirror resolves in a module
+extension and records what it resolved to as extension facts in `MODULE.bazel.lock`; `module_ctx.facts` does not
+exist on Bazel 8. See [docs/mirror.md](docs/mirror.md#where-the-resolved-mirror-is-recorded).
 
 ## Getting Started
 
@@ -96,6 +102,11 @@ Each `mirror` entry pins an exact version (`hashicorp/random:3.6.0`) or gives a 
 (`hashicorp/random:~> 3.1.0`, `hashicorp/tls:>= 4.0.0, < 4.0.5`) resolved against the registry when the mirror is
 built. Pinning is recommended - see [docs/mirror.md](docs/mirror.md) for the version syntax, the prerelease rule,
 and how the resolved set is published.
+
+Resolution happens in the module extension, so the version a constraint selected and each package's URL and
+sha256 are recorded in `MODULE.bazel.lock` - as repository attributes and as extension facts. There is no second
+lock file to maintain, constraints do not drift between builds, and a subsequent build makes no registry calls
+at all. See [docs/mirror.md](docs/mirror.md#where-the-resolved-mirror-is-recorded).
 
 `provider_locks` checks every package against the `zh:` hashes in a `terraform providers lock`-generated
 `.terraform.lock.hcl`, so packages are admitted on a signature-verified hash rather than on the registry's word.

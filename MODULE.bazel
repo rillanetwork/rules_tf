@@ -1,5 +1,8 @@
 module(
     name = "rules_tf",
+    # The provider mirror resolves in the module extension and records the
+    # result as extension facts, which Bazel gained in 9.0.
+    bazel_compatibility = [">=9.0.0"],
     repo_name = "rules_tf",
 )
 
@@ -21,7 +24,6 @@ multitool.hub(lockfile = "//tools/multitool:lock.json")
 use_repo(multitool, "multitool")
 
 tf = use_extension("@rules_tf//tf:extensions.bzl", "tf_repositories")
-
 use_repo(
     tf,
     "tf_toolchains",

@@ -1,0 +1,15 @@
+{
+  "terraform": {
+    "required_version": ">= 1.9, <= 1.13",
+    "required_providers": {
+      "null": {
+        "source": "unreachable.invalid/hashicorp/null",
+        "version": "3.1.1"
+      },
+      "random": {
+        "source": "unreachable.invalid/hashicorp/random",
+        "version": "3.3.2"
+      }
+    }
+  }
+}

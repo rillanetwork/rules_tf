@@ -1,17 +1,11 @@
 load(
     "@rules_tf//tf/toolchains:utils.bzl",
-    "download_providers_to_mirror",
+    "download_providers",
     "get_sha256sum",
-    "mirror_manifest",
-    "parse_mirror_entries",
-    "parse_provider_locks",
 )
 
 def _download_impl(ctx):
     ctx.report_progress("Downloading tofu")
-
-    parsed_entries = parse_mirror_entries(ctx.attr.mirror)
-    provider_locks = parse_provider_locks(ctx.attr.provider_lock_documents)
 
     ctx.template(
         "BUILD",
@@ -52,35 +46,23 @@ def _download_impl(ctx):
     if not res.success:
         fail("!failed to dl: ", url)
 
-    # See terraform/toolchain.bzl for the rationale: fetching each provider
-    # through ctx.download_and_extract routes its bytes through Bazel's
-    # --repository_cache so they are served offline on subsequent runs, and the
-    # unpacked layout lets downstream init symlink plugins instead of extracting
-    # full copies per target. tofu resolves providers from its own registry.
-    if len(parsed_entries) > 0:
-        resolved_entries = download_providers_to_mirror(
-            ctx,
-            parsed_entries,
-            "registry.opentofu.org",
-            ctx.attr.os,
-            ctx.attr.arch,
-            provider_locks,
-            ctx.attr.provider_locks_strict,
-        )
-    else:
-        resolved_entries = []
-        ctx.file("mirror/.keep", content = "")
+    # Every coordinate was resolved by the module extension, so this reaches no
+    # registry: known URLs against known hashes, which makes each package
+    # content-addressed for --repository_cache and lets a warm cache serve the
+    # whole mirror offline.
+    #
+    # Each (source, version) is fetched independently, so multiple versions of a
+    # single source coexist in the mirror -- terraform would otherwise AND their
+    # required_providers constraints into an unsatisfiable set.
+    packages = json.decode(ctx.attr.providers_json)
+    download_providers(ctx, packages, ctx.attr.os, ctx.attr.arch)
 
-    # Written after the fetch, not before: a manifest entry may have been a
-    # constraint, and only the resolved pin describes what the mirror holds.
-    manifest = mirror_manifest(resolved_entries)
-    ctx.file("mirror_versions.json", content = json.encode(manifest))
+    # The manifest as it actually landed, for a build to inspect. Constraints
+    # are already resolved by this point, so these are all concrete pins.
     ctx.file(
-        "mirror_versions.bzl",
-        content = "MIRROR_VERSIONS = %s\n" % json.encode(manifest),
+        "mirror_versions.json",
+        content = json.encode(["%s@%s" % (p["source"], p["version"]) for p in packages]),
     )
-
-    return
 
 tofu_download = repository_rule(
     implementation = _download_impl,
@@ -88,13 +70,12 @@ tofu_download = repository_rule(
         "version": attr.string(mandatory = True),
         "os": attr.string(mandatory = True),
         "arch": attr.string(mandatory = True),
-        "mirror": attr.string_list(mandatory = True),
-        "provider_lock_documents": attr.string_list(
-            doc = "Raw contents of each .terraform.lock.hcl supplying verified zh: hashes.",
-        ),
-        "provider_locks_strict": attr.bool(
-            default = False,
-            doc = "Fail rather than warn when a mirror entry has no dependency-lock entry.",
+        "providers_json": attr.string(
+            mandatory = True,
+            doc = "JSON list of the providers to mirror, each already resolved by the " +
+                  "module extension to a concrete version, download_url and sha256. " +
+                  "Recorded verbatim in MODULE.bazel.lock, which is what makes the " +
+                  "resolved mirror reviewable.",
         ),
     },
 )

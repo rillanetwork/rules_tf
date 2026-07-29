@@ -46,21 +46,79 @@ terraform, and means a prerelease can only reach the mirror through an exact pin
 
 Two entries that resolve to the same version collapse into one, so overlapping constraints are harmless.
 
-## Pins versus constraints
+## Where the resolved mirror is recorded
 
-A constraint is convenient but lets the mirror's contents drift with no change to the manifest: the same commit
-can produce a different mirror tomorrow, which is a reproducibility hazard and invalidates Bazel's repository
-cache when it happens.
+Resolution happens in the module extension, not in the download repository, so its results are visible to
+bzlmod and land in `MODULE.bazel.lock` - there is no second lock file to maintain.
 
-The resolved set is therefore recorded, so drift is at least observable. After a fetch the toolchain repository
-contains:
+Two things are recorded there, and both are worth reviewing in a diff.
 
-- `mirror_versions.json` - the resolved `source@version` list as JSON.
-- `mirror_versions.bzl` - the same list as `MIRROR_VERSIONS`, which is what the toolchain publishes as
-  `TfInfo.mirror_versions` for rules to consume.
+**The concrete coordinates**, as attributes of the generated download repository:
 
-Both are written *after* resolution, so they name the concrete versions the mirror actually holds - never the
-constraint that was written in `MODULE.bazel`.
+```json
+"attributes": {
+  "version": "1.9.5", "os": "linux", "arch": "amd64",
+  "providers_json": "[{\"source\":\"hashicorp/random\",\"version\":\"3.1.3\", ...}]"
+}
+```
+
+**The registry's answers**, as extension facts:
+
+```json
+"facts": {
+  "@@rules_tf+//tf:extensions.bzl%tf_repositories": {
+    "resolve/registry.terraform.io/hashicorp/random/~> 3.1.0": {"version": "3.1.3"},
+    "package/registry.terraform.io/hashicorp/random/3.1.3/linux_amd64": {
+      "download_url": "https://releases.hashicorp.com/...linux_amd64.zip",
+      "sha256": "bcf7806b..."
+    }
+  }
+}
+```
+
+A `resolve/` fact answers "which version does this constraint select"; a `package/` fact answers "where does
+this version live and what does it hash to". Together they are everything the extension would otherwise ask the
+registry, which is why it declares `reproducible = True`: a second evaluation defines exactly the same
+repositories with no network access at all. Since packages are content-addressed by sha256, a warm
+`--repository_cache` then serves the whole mirror offline.
+
+The toolchain repository also writes `mirror_versions.json`, the resolved `source@version` list, which is what
+it publishes as `TfInfo.mirror_versions` for rules to consume.
+
+### Pins versus constraints
+
+A constraint would otherwise let the mirror drift with no change to the manifest: the same commit could produce
+a different mirror tomorrow. The `resolve/` fact prevents that - once a constraint has selected a version, that
+selection is held by the lockfile and reused.
+
+Refresh deliberately:
+
+```sh
+bazel mod deps --lockfile_mode=refresh
+```
+
+Pinning is still the clearer form, since the manifest then says outright what the mirror holds.
+
+### Multiple platforms
+
+Only the host platform is resolved on any given run, but coordinates already recorded for the other platforms
+are carried through untouched. Building on each host in turn therefore accumulates one lockfile covering them
+all - the property terraform gets from a multi-platform `.terraform.lock.hcl`.
+
+### Enforcement
+
+Under the default `--lockfile_mode=update` Bazel will re-resolve and rewrite the lockfile when the manifest
+changes. To make an unexpected change an error rather than a silent update, build with:
+
+```sh
+bazel test --lockfile_mode=error //...
+```
+
+### What this does and does not protect
+
+Recording the sha256 closes the window in which a registry could report a different checksum for a version you
+already built against. It does not establish that the checksum was ever the *right* one - for that, see verified
+hashes below.
 
 ## Verified hashes
 

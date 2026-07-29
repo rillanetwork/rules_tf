@@ -1,0 +1,12 @@
+load("@rules_tf//tf:def.bzl", "tf_module")
+
+# Providers come from a mirror whose registry host is unreachable; only the
+# facts committed in MODULE.bazel.lock make it resolvable.
+tf_module(
+    name = "root-mod-facts",
+    providers = {
+        "random": "unreachable.invalid/hashicorp/random:3.3.2",
+        "null": "unreachable.invalid/hashicorp/null:3.1.1",
+    },
+    tf_version = ">= 1.9, <= 1.13",
+)

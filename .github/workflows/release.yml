@@ -11,7 +11,6 @@ jobs:
     strategy:
       matrix:
         bazel-version:
-          - 8.x
           - 9.x
         runner:
           - ubuntu-latest
@@ -64,6 +63,11 @@ jobs:
         run: bazel query "tests(//...)" | xargs -n1 bazel test
         working-directory: tests/bcr_mirror_json
 
+      # Pins its own Bazel via .bazelversion: the facts committed in its
+      # MODULE.bazel.lock are only honoured by the release that wrote them.
+      - name: Test extension facts
+        run: bazel query "tests(//...)" | xargs -n1 bazel test
+        working-directory: tests/bcr_facts
 
       - name: Setup tofu tests
         run: |
@@ -75,6 +79,7 @@ jobs:
       - name: Test tofu toolchain
         run: bazel query "tests(//...)" | xargs -n1 bazel test
         working-directory: tests/bcr_tofu
+
   release:
     if: ${{ github.event_name != 'pull_request' }}
     runs-on: ubuntu-latest
