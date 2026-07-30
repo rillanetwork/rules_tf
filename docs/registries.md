@@ -70,3 +70,13 @@ Registries respond with a package URL that may point somewhere else entirely - t
 `releases.hashicorp.com` or `github.com`. When the package host differs from the registry host, that download is
 made unauthenticated, so the credential is never forwarded to a third party. A private registry that serves
 packages from its own host does receive the token.
+
+### Credentials when locking hashes
+
+The `tf_providers_lock` target shells out to `terraform providers lock`, so that step authenticates the way
+terraform does rather than the way the extension above does. The overlap covers the usual setup - `TF_TOKEN_<host>`
+and `~/.terraform.d/credentials.tfrc.json` are read by both - but terraform additionally accepts the HCL `.tfrc`
+credentials format and a `credentials_helper`, neither of which the extension can use. A token that only
+terraform can find will lock hashes for a mirror the extension then cannot fetch.
+
+See [mirror.md](mirror.md#verified-hashes) for what the target does with them.

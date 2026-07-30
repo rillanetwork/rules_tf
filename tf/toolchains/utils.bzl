@@ -273,6 +273,14 @@ def provider_source_parts(source, default_host):
         return default_host, parts[0], parts[1]
     return parts[0], parts[1], parts[2]
 
+# The registry an unqualified source resolves against, keyed by use_tofu. Read
+# by the module extension and stamped into each toolchain, so the lock target
+# addresses providers exactly as the mirror did.
+DEFAULT_REGISTRY = {
+    True: "registry.opentofu.org",
+    False: "registry.terraform.io",
+}
+
 # Service-discovery results for the two default registries. Seeding them keeps
 # the common case free of an extra `.well-known` round trip per build; every
 # other host is discovered for real by `_providers_base_url`.
@@ -501,6 +509,20 @@ def package_fact_key(host, namespace, provider_type, version, platform):
         type = provider_type,
         version = version,
         platform = platform,
+    )
+
+def verified_fact_key(host, namespace, provider_type, version):
+    """Fact key under which a version's signature-verified zh: hashes are remembered.
+
+    Not platform-scoped: a `zh:` hash set covers every platform's package and
+    the lock does not record which hash belongs to which, so the check it
+    supports is set membership either way.
+    """
+    return "verified/{host}/{ns}/{type}/{version}".format(
+        host = host,
+        ns = namespace,
+        type = provider_type,
+        version = version,
     )
 
 # The platforms a tf toolchain can run on, and so the only ones whose packages
@@ -827,6 +849,43 @@ def parse_provider_locks(documents):
 
     return locks
 
+def provider_locks_from_facts(facts, packages):
+    """Reads the verified zh: hashes recorded as facts for the packages given.
+
+    The hashes are put there by the `tf_providers_lock` target, which runs
+    `terraform providers lock` (or `tofu providers lock`) and merges what it
+    verified into `MODULE.bazel.lock` -- the same file that already holds the
+    resolved coordinates, so the check needs no lock file of its own.
+
+    Returns (locks, facts), where locks has the shape `parse_provider_locks`
+    produces so the two sources can be merged, and facts is the subset to
+    return from the extension. Re-emitting matters: an extension's facts are
+    replaced wholesale by what it returns, so a key not asked for by name here
+    would be dropped from the lockfile on the next evaluation.
+    """
+    locks = {}
+    reemit = {}
+    for p in packages:
+        key = verified_fact_key(p["host"], p["namespace"], p["type"], p["version"])
+        remembered = facts.get(key)
+        if not remembered:
+            continue
+
+        reemit[key] = remembered
+        locks["%s/%s/%s@%s" % (p["host"], p["namespace"], p["type"], p["version"])] = {
+            h: True
+            for h in remembered["zh"]
+        }
+
+    return locks, reemit
+
+def merge_provider_locks(a, b):
+    """Unions two `parse_provider_locks`-shaped tables."""
+    merged = {k: dict(v) for k, v in a.items()}
+    for key, hashes in b.items():
+        merged.setdefault(key, {}).update(hashes)
+    return merged
+
 def verify_against_provider_locks(packages, locks, strict):
     """Checks each package hash against the signature-verified lock hashes."""
     uncovered = []
@@ -847,10 +906,11 @@ def verify_against_provider_locks(packages, locks, strict):
     if len(uncovered) == 0:
         return
 
-    message = ("no dependency-lock entry covers: %s. Those providers were fetched on the " +
-               "registry's word alone, with no signature-derived hash to check against. Run " +
-               "`terraform providers lock` (or `tofu providers lock`, for a tofu toolchain) " +
-               "for them and add the file to provider_locks.") % (
+    message = ("no verified hashes cover: %s. Those providers were fetched on the registry's " +
+               "word alone, with no signature-derived hash to check against. Run the " +
+               "tf_providers_lock target to record hashes for the whole manifest, or run " +
+               "`terraform providers lock` (`tofu providers lock`, for a tofu toolchain) " +
+               "yourself and add the file to provider_locks.") % (
         ", ".join(uncovered)
     )
     if strict:

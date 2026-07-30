@@ -15,4 +15,6 @@
 /tests/bcr_tofu/bazel-*
 /tests/bcr_tofu/MODULE.bazel.lock
 /tests/bcr_tofu/.bazeliskrc
+/tests/bcr_verified/bazel-*
+/tests/bcr_verified/.bazeliskrc
 __pycache__/

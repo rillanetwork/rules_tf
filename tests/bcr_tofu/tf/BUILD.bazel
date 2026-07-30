@@ -1,4 +1,13 @@
+load("@rules_tf//tf:def.bzl", "tf_providers_lock")
+
 exports_files([
     "providers.lock.hcl",
     "providers-random-3.1.3.lock.hcl",
 ])
+
+# Locks against registry.opentofu.org, using the tofu binary from the toolchain
+# rather than terraform: the two registries serve differently-signed packages,
+# so only the matching tool produces hashes the mirror can be admitted on.
+tf_providers_lock(
+    name = "providers_lock",
+)

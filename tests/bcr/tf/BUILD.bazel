@@ -1,4 +1,4 @@
-load("@rules_tf//tf:def.bzl", "tf_format", "tf_gen_doc")
+load("@rules_tf//tf:def.bzl", "tf_format", "tf_gen_doc", "tf_providers_lock")
 
 tf_format(
     name = "tffmt",
@@ -29,4 +29,8 @@ tf_gen_doc(
     name   = "custom-tfgendoc",
     modules = ["//{}/{}".format(package_name(), m) for m in subpackages(include = ["**/*"])],
     config = ":tfdoc-config",
+)
+
+tf_providers_lock(
+    name = "providers_lock",
 )

@@ -5,9 +5,12 @@ load("@rules_tf//tf/toolchains/tofu:toolchain.bzl", "tofu_download")
 load("@rules_tf//tf:toolchains.bzl", "tf_toolchains")
 load(
     "@rules_tf//tf/toolchains:utils.bzl",
+    "DEFAULT_REGISTRY",
+    "merge_provider_locks",
     "mirror_manifest",
     "parse_mirror_entries",
     "parse_provider_locks",
+    "provider_locks_from_facts",
     "resolve_providers",
     "verify_against_provider_locks",
 )
@@ -40,11 +43,6 @@ def _repo_name(*, module, tool, index, suffix = ""):
         index = index,
         suffix = suffix,
     )
-
-_DEFAULT_REGISTRY = {
-    True: "registry.opentofu.org",
-    False: "registry.terraform.io",
-}
 
 def _tf_repositories(ctx):
     host_detected_os, host_detected_arch = detect_host_platform(ctx)
@@ -112,7 +110,7 @@ def _tf_repositories(ctx):
             packages, tag_facts = resolve_providers(
                 ctx,
                 parse_mirror_entries(mirror),
-                _DEFAULT_REGISTRY[version_tag.use_tofu],
+                DEFAULT_REGISTRY[version_tag.use_tofu],
                 host_detected_os,
                 host_detected_arch,
                 ctx.facts,
@@ -120,12 +118,17 @@ def _tf_repositories(ctx):
             facts.update(tag_facts)
 
             # Every package hash is known before a byte is fetched, so the
-            # signature-derived check runs here too.
-            provider_locks = parse_provider_locks([
+            # signature-derived check runs here too. Hashes come from the facts
+            # the tf_providers_lock target recorded, from any lock file passed
+            # in, or from both.
+            fact_locks, lock_facts = provider_locks_from_facts(ctx.facts, packages)
+            facts.update(lock_facts)
+
+            provider_locks = merge_provider_locks(fact_locks, parse_provider_locks([
                 ctx.read(lock)
                 for lock in version_tag.provider_locks
-            ])
-            if len(provider_locks) > 0:
+            ]))
+            if len(provider_locks) > 0 or version_tag.provider_locks_strict:
                 verify_against_provider_locks(
                     packages,
                     provider_locks,
@@ -192,11 +195,16 @@ _version_tag = tag_class(
                   "the registry's SHA256SUMS signature against the keys embedded in the " +
                   "terraform binary, so they are a trust root independent of the registry. " +
                   "A lock file holds one version per provider; pass several to cover a " +
-                  "multi-version mirror.",
+                  "multi-version mirror. Needed only to reuse a lock file that already " +
+                  "exists: a tf_providers_lock target records the same hashes in " +
+                  "MODULE.bazel.lock, where they need no file of their own.",
         ),
         "provider_locks_strict": attr.bool(
             default = False,
-            doc = "Fail rather than warn when a mirror entry has no dependency-lock entry.",
+            doc = "Fail rather than warn when a mirror entry has no signature-verified hash " +
+                  "to check against, from either provider_locks or the facts a " +
+                  "tf_providers_lock target recorded. Requires those hashes to exist before " +
+                  "it is turned on, since the check runs before the mirror is fetched.",
         ),
         "mirror_json": attr.label(
             allow_single_file = True,

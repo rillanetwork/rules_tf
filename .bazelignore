@@ -2,3 +2,4 @@ tests/bcr
 tests/bcr_mirror_json
 tests/bcr_facts
 tests/bcr_tofu
+tests/bcr_verified

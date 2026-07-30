@@ -5,6 +5,7 @@ load("@rules_tf//tf/toolchains/tfdoc:toolchain.bzl", _tfdoc_toolchain = "tfdoc_t
 load("@rules_tf//tf/toolchains/tfdoc:toolchain.bzl", _tfdoc_declare_toolchain_chunk = "DECLARE_TOOLCHAIN_CHUNK")
 load("@rules_tf//tf/toolchains/tflint:toolchain.bzl", _tflint_toolchain = "tflint_toolchain")
 load("@rules_tf//tf/toolchains/tflint:toolchain.bzl", _tflint_declare_toolchain_chunk = "DECLARE_TOOLCHAIN_CHUNK")
+load("@rules_tf//tf/toolchains:utils.bzl", "DEFAULT_REGISTRY")
 
 platforms = {
     "linux_amd64": {
@@ -109,6 +110,7 @@ package(default_visibility = ["//visibility:public"])
             os = ctx.attr.os,
             arch = ctx.attr.arch,
             mirror_versions = _render_mirror_versions(ctx.attr.repo_mirrors.get(repo, "")),
+            default_registry = DEFAULT_REGISTRY[False],
         )
         content += chunk
 
@@ -118,6 +120,7 @@ package(default_visibility = ["//visibility:public"])
             os = ctx.attr.os,
             arch = ctx.attr.arch,
             mirror_versions = _render_mirror_versions(ctx.attr.repo_mirrors.get(repo, "")),
+            default_registry = DEFAULT_REGISTRY[True],
         )
         content += chunk
 

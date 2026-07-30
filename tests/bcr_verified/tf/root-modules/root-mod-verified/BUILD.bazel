@@ -1,0 +1,12 @@
+load("@rules_tf//tf:def.bzl", "tf_module")
+
+# Resolves its providers from the mirror, every package of which was admitted
+# on a signature-verified hash held in MODULE.bazel.lock.
+tf_module(
+    name = "root-mod-verified",
+    providers = {
+        "random": "hashicorp/random:3.3.2",
+        "null": "hashicorp/null:3.1.1",
+    },
+    tf_version = ">= 1.9",
+)

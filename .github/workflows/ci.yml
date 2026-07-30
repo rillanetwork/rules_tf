@@ -28,7 +28,7 @@ jobs:
       # to the packages with tests and buildable tooling instead.
       - name: Test
         run: |
-          bazel test //tools/...
+          bazel test //tools/... //tf/rules:providers_lock_test
           bazel build //tf_apply/... //lint:buildifier.check
 
   tests:
@@ -109,3 +109,21 @@ jobs:
       - name: Test tofu toolchain
         run: bazel query "tests(//...)" | xargs -n1 bazel test
         working-directory: tests/bcr_tofu
+
+      # Runs `tofu providers lock` for real, harvesting the verified hashes into
+      # this workspace's (gitignored) lockfile: coverage that the lock target
+      # drives the tofu binary and addresses registry.opentofu.org.
+      - name: Test providers lock harvest
+        run: bazel run //tf:providers_lock
+        working-directory: tests/bcr_tofu
+
+      # Verified hashes with no lock file: strict, so the build only passes
+      # because the facts committed in its MODULE.bazel.lock cover every entry.
+      # --check re-runs `terraform providers lock` and fails if the committed
+      # hashes are not the ones it verifies. Pins its own Bazel via
+      # .bazelversion, for the same reason the facts workspace does.
+      - name: Test verified hashes
+        run: |
+          bazel query "tests(//...)" | xargs -n1 bazel test
+          bazel run //tf:providers_lock -- --check
+        working-directory: tests/bcr_verified
