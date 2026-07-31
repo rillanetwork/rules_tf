@@ -116,14 +116,14 @@ def local_names(addresses):
     """Assigns each address a required_providers local name.
 
     The name is arbitrary, since `source` states the provider outright, but
-    terraform restricts it to letters, digits and dashes -- so the address is
-    transliterated, and a collision between two addresses that transliterate
-    alike is broken with a suffix.
+    terraform restricts it to letters, digits and dashes and requires a letter
+    first -- so the address is transliterated and prefixed, and a collision
+    between two addresses that transliterate alike is broken with a suffix.
     """
     names = {}
     taken = {}
     for address in sorted(addresses):
-        base = re.sub(r"[^a-z0-9]+", "-", address.lower()).strip("-")
+        base = "p-" + re.sub(r"[^a-z0-9]+", "-", address.lower()).strip("-")
         seen = taken.get(base, 0)
         taken[base] = seen + 1
         names[address] = base if seen == 0 else "%s-%d" % (base, seen)
@@ -266,9 +266,19 @@ def merge_into_lockfile(path, extension_key, verified, dry_run, check):
         print("rules_tf: --dry-run, leaving %s alone" % path)
         return
 
-    with open(path, "w") as handle:
-        json.dump(document, handle, indent=2)
-        handle.write("\n")
+    # Staged beside the lockfile and moved into place, so an interrupt or a
+    # failure part-way through leaves the consumer's committed MODULE.bazel.lock
+    # as it was rather than truncated. os.replace is atomic within a directory.
+    staged = path + ".tmp"
+    try:
+        with open(staged, "w") as handle:
+            json.dump(document, handle, indent=2)
+            handle.write("\n")
+        os.replace(staged, path)
+    except BaseException:
+        if os.path.exists(staged):
+            os.remove(staged)
+        raise
 
     print("rules_tf: wrote %s" % path)
     print(

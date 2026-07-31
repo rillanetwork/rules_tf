@@ -1,4 +1,21 @@
+"""Helpers shared by the module extension and the toolchain download rules.
+
+The mirror is resolved in the extension -- version constraints, registry service
+discovery, package coordinates -- and fetched in the download repository, so the
+parts both need live here. Keeping them free of any particular ctx is also what
+lets utils_test.bzl exercise them without reaching a registry.
+"""
+
 def get_sha256sum(shasums, file):
+    """Reads one file's checksum out of a SHA256SUMS document.
+
+    Args:
+      shasums: contents of a SHA256SUMS document, one "<hash>  <name>" per line.
+      file: name of the file whose checksum is wanted.
+
+    Returns:
+      The hex checksum, or None when the document has no line for file.
+    """
     lines = shasums.splitlines()
     for line in lines:
         if not line.endswith(file):
@@ -132,8 +149,13 @@ def parse_version_constraint(spec):
     """Parses a comma-separated version constraint into a list of terms.
 
     Accepts terraform's operators (`=`, `!=`, `>`, `>=`, `<`, `<=`, `~>`, and a
-    bare version meaning `=`), joined by commas to mean AND. Returns None if
-    any term fails to parse.
+    bare version meaning `=`), joined by commas to mean AND.
+
+    Args:
+      spec: the constraint as written in the manifest, e.g. ">= 1.0, < 2.0".
+
+    Returns:
+      A list of (op, bound) structs, or None if any term fails to parse.
     """
     terms = []
     for raw in spec.split(","):
@@ -195,6 +217,13 @@ def select_matching_version(available, spec):
 
     Prereleases are never selected by a constraint, matching terraform: pin the
     exact version to mirror a prerelease.
+
+    Args:
+      available: version strings the registry publishes for one provider.
+      spec: the constraint to satisfy, in `parse_version_constraint` syntax.
+
+    Returns:
+      The highest satisfying version, or "" when none match or spec is malformed.
     """
     terms = parse_version_constraint(spec)
     if terms == None:
@@ -224,15 +253,19 @@ def select_matching_version(available, spec):
 def parse_mirror_entries(mirror):
     """Parses a list of "[hostname/]namespace/type:version" strings.
 
-    Returns a list of {"source", "version", "is_exact"} dicts, deduplicated on
-    (source, version). Fails on malformed entries or duplicates.
-
     A version is either an exact 'x.y.z[-prerelease][+build]' pin or a
     constraint (`>= 1.0`, `~> 3.0`, `>= 1.0, < 2.0`). Constraints are resolved
     against the registry's published version list when the mirror is built, and
     the selection is then held by an extension fact in `MODULE.bazel.lock`, so
     it does not drift on the next evaluation. Refresh a constraint deliberately
     with `bazel mod deps --lockfile_mode=refresh`.
+
+    Args:
+      mirror: the manifest, as the `mirror` attribute or `mirror_json` holds it.
+
+    Returns:
+      A list of {"source", "version", "is_exact"} dicts, deduplicated on
+      (source, version). Fails on a malformed entry or a duplicate.
     """
     seen = {}
     parsed = []
@@ -265,8 +298,14 @@ def parse_mirror_entries(mirror):
 def provider_source_parts(source, default_host):
     """Splits a "[hostname/]namespace/type" source into (host, namespace, type).
 
-    Host defaults to `default_host` when the source carries no host prefix. The
-    source shape itself is already validated by `parse_mirror_entries`.
+    The source shape itself is already validated by `parse_mirror_entries`.
+
+    Args:
+      source: a mirror entry's source, with or without a leading host.
+      default_host: host to assume when source carries no host prefix.
+
+    Returns:
+      A (host, namespace, type) tuple.
     """
     parts = source.split("/")
     if len(parts) == 2:
@@ -344,7 +383,17 @@ def _credentials_file_token(ctx, host):
     return creds.get(host, {}).get("token", "")
 
 def auth_headers(client, host):
-    """Authorization header for host, or an empty dict when unauthenticated."""
+    """Authorization header for host, or an empty dict when unauthenticated.
+
+    Args:
+      client: the registry client from `new_registry_client`, which memoizes the
+        lookup so a manifest naming several providers on one host reads the
+        credential once.
+      host: registry hostname the request is bound for.
+
+    Returns:
+      A headers dict carrying a bearer token, or {} when no token was found.
+    """
     tokens = client["tokens"]
     if host not in tokens:
         ctx = client["ctx"]
@@ -407,13 +456,29 @@ def _providers_base_url(client, host):
 def _provider_label(t):
     return "%s/%s/%s %s" % (t["host"], t["namespace"], t["type"], t["version"])
 
+def _dedupe_targets(targets):
+    """Drops targets addressing a package that an earlier target already covers.
+
+    Two constraints can select the same version, and a constraint can land on a
+    version an exact pin already names; mirroring one twice would race two
+    downloads onto the same output directory.
+    """
+    deduped = []
+    seen = {}
+    for t in targets:
+        key = "%s/%s/%s@%s" % (t["host"], t["namespace"], t["type"], t["version"])
+        if key in seen:
+            continue
+        seen[key] = True
+        deduped.append(t)
+
+    return deduped
+
 def _resolve_constraints(ctx, client, targets):
     """Replaces every constraint target's version with a concrete published one.
 
     The registry's version listing is fetched for each constrained provider,
     all in flight at once. Targets that already carry an exact pin cost nothing.
-    Deduplicates the result, since two different constraints may well select the
-    same version and would otherwise be mirrored twice.
     """
     constrained = [t for t in targets if not t["is_exact"]]
     if len(constrained) == 0:
@@ -475,18 +540,7 @@ def _resolve_constraints(ctx, client, targets):
         t["version"] = selected
         t["is_exact"] = True
 
-    # Two constraints on one source can land on the same version; mirroring it
-    # twice would download and unpack over the same directory.
-    deduped = []
-    seen = {}
-    for t in targets:
-        key = "%s/%s/%s@%s" % (t["host"], t["namespace"], t["type"], t["version"])
-        if key in seen:
-            continue
-        seen[key] = True
-        deduped.append(t)
-
-    return deduped
+    return targets
 
 # Fact keys are unversioned, and changing the shape of one (or of its value)
 # is therefore a breaking change to any lockfile already carrying them. Do it
@@ -562,8 +616,17 @@ def resolve_providers(ctx, entries, default_host, os, arch, facts):
     covering them all -- the property terraform gets from a multi-platform
     `.terraform.lock.hcl`.
 
-    Returns (packages, facts), where packages carries the concrete coordinates
-    for this platform and facts is the table to persist.
+    Args:
+      ctx: the module extension's `module_ctx`.
+      entries: parsed manifest entries, from `parse_mirror_entries`.
+      default_host: registry an unqualified source resolves against.
+      os: host operating system, in terraform's spelling ("linux", "darwin").
+      arch: host architecture, in terraform's spelling ("amd64", "arm64").
+      facts: the previously persisted fact table, `module_ctx.facts`.
+
+    Returns:
+      A (packages, facts) tuple: packages carries the concrete coordinates for
+      this platform, facts is the table to hand back to bzlmod.
     """
     client = new_registry_client(ctx)
 
@@ -598,6 +661,21 @@ def resolve_providers(ctx, entries, default_host, os, arch, facts):
             t["base"] = _providers_base_url(client, t["host"])
 
     targets = _resolve_constraints(ctx, client, targets)
+
+    # Each constraint's answer is remembered before the dedupe below, never
+    # after: two constraints can select the same version, and the one that
+    # collapses would otherwise be left with no fact of its own. The lockfile
+    # would look complete while that spec still had to be re-resolved against
+    # the registry on every later evaluation.
+    spec_facts = {}
+    for t in targets:
+        spec = t.get("spec")
+        if spec:
+            spec_facts[resolve_fact_key(t["host"], t["namespace"], t["type"], spec)] = {
+                "version": t["version"],
+            }
+
+    targets = _dedupe_targets(targets)
 
     platform = "%s_%s" % (os, arch)
     for t in targets:
@@ -673,7 +751,7 @@ def resolve_providers(ctx, entries, default_host, os, arch, facts):
     # lookup, not an iterable, so the previous table cannot be enumerated. The
     # result is that the persisted facts track the manifest exactly -- an entry
     # dropped from the mirror takes its facts with it instead of silting up.
-    new_facts = {}
+    new_facts = dict(spec_facts)
     packages = []
     for t in targets:
         new_facts[package_fact_key(
@@ -692,12 +770,6 @@ def resolve_providers(ctx, entries, default_host, os, arch, facts):
             remembered = facts.get(key)
             if remembered:
                 new_facts[key] = remembered
-
-        spec = t.get("spec")
-        if spec:
-            new_facts[resolve_fact_key(t["host"], t["namespace"], t["type"], spec)] = {
-                "version": t["version"],
-            }
 
         packages.append({
             "source": t["source"],
@@ -723,6 +795,12 @@ def download_providers(ctx, packages, os, arch):
     downstream `terraform init -plugin-dir=<mirror>` consumes, letting init
     symlink the plugin into each module's .terraform/providers/ rather than
     extracting a fresh ~750MB copy per target.
+
+    Args:
+      ctx: the download repository's `repository_ctx`.
+      packages: resolved coordinates, as `resolve_providers` returns them.
+      os: host operating system, in terraform's spelling.
+      arch: host architecture, in terraform's spelling.
     """
     if len(packages) == 0:
         ctx.file("mirror/.keep", content = "")
@@ -800,6 +878,13 @@ def parse_provider_locks(documents):
 
     The grammar used here is the narrow subset terraform itself emits, not
     general HCL.
+
+    Args:
+      documents: contents of one or more `.terraform.lock.hcl` files.
+
+    Returns:
+      {"<host>/<ns>/<type>@<version>": {"<zh hash>": True}}, merged across
+      every document given.
     """
     locks = {}
     for raw in documents:
@@ -857,11 +942,18 @@ def provider_locks_from_facts(facts, packages):
     verified into `MODULE.bazel.lock` -- the same file that already holds the
     resolved coordinates, so the check needs no lock file of its own.
 
-    Returns (locks, facts), where locks has the shape `parse_provider_locks`
-    produces so the two sources can be merged, and facts is the subset to
-    return from the extension. Re-emitting matters: an extension's facts are
-    replaced wholesale by what it returns, so a key not asked for by name here
-    would be dropped from the lockfile on the next evaluation.
+    Re-emitting matters: an extension's facts are replaced wholesale by what it
+    returns, so a key not asked for by name here would be dropped from the
+    lockfile on the next evaluation.
+
+    Args:
+      facts: the previously persisted fact table, `module_ctx.facts`.
+      packages: resolved coordinates whose hashes are wanted.
+
+    Returns:
+      A (locks, facts) tuple: locks has the shape `parse_provider_locks`
+      produces, so the two sources can be merged; facts is the subset to hand
+      back from the extension.
     """
     locks = {}
     reemit = {}
@@ -871,23 +963,48 @@ def provider_locks_from_facts(facts, packages):
         if not remembered:
             continue
 
+        # Checked rather than indexed blindly: these are the one class of fact a
+        # tool outside the extension writes, so a hand-edited or half-written
+        # lockfile should say which entry is wrong.
+        hashes = remembered.get("zh") if type(remembered) == "dict" else None
+        if type(hashes) != "list":
+            fail(("the verified hashes recorded for %s in MODULE.bazel.lock are malformed: " +
+                  "expected {\"zh\": [...]}, got %r. Delete the '%s' fact and re-run the " +
+                  "tf_providers_lock target.") % (key, remembered, key))
+
         reemit[key] = remembered
         locks["%s/%s/%s@%s" % (p["host"], p["namespace"], p["type"], p["version"])] = {
             h: True
-            for h in remembered["zh"]
+            for h in hashes
         }
 
     return locks, reemit
 
 def merge_provider_locks(a, b):
-    """Unions two `parse_provider_locks`-shaped tables."""
+    """Unions two `parse_provider_locks`-shaped tables.
+
+    Args:
+      a: one table of hashes; not mutated.
+      b: another table, whose hashes are added to a's.
+
+    Returns:
+      A new table holding every hash from both.
+    """
     merged = {k: dict(v) for k, v in a.items()}
     for key, hashes in b.items():
         merged.setdefault(key, {}).update(hashes)
     return merged
 
 def verify_against_provider_locks(packages, locks, strict):
-    """Checks each package hash against the signature-verified lock hashes."""
+    """Checks each package hash against the signature-verified lock hashes.
+
+    Args:
+      packages: resolved coordinates, each carrying the sha256 the mirror would
+        be fetched against.
+      locks: verified hashes, as `parse_provider_locks` or
+        `provider_locks_from_facts` produce them.
+      strict: fail rather than warn when an entry has no hash covering it.
+    """
     uncovered = []
     for t in packages:
         key = "%s/%s/%s@%s" % (t["host"], t["namespace"], t["type"], t["version"])

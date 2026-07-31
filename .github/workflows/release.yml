@@ -82,9 +82,23 @@ jobs:
 
       # Runs `tofu providers lock` for real, harvesting the verified hashes into
       # this workspace's (gitignored) lockfile: coverage that the lock target
-      # drives the tofu binary and addresses registry.opentofu.org.
+      # drives the tofu binary and addresses registry.opentofu.org. The harvest
+      # fails if any mirror entry produced no hashes, so exit zero means all of
+      # them locked. --check then reads back what was written, which is what
+      # catches a fact key or value shape drifting between the two languages.
+      #
+      # The expunged output base forces the following resolution to be cold, so
+      # it goes through the facts in the lockfile rather than a cached extension
+      # result -- and, since packages are content-addressed, through the
+      # repository cache rather than the registry. What no tofu workspace covers
+      # is the facts being the *only* source of verified hashes: this one also
+      # sets provider_locks, and bcr_verified covers that path for terraform.
       - name: Test providers lock harvest
-        run: bazel run //tf:providers_lock
+        run: |
+          bazel run //tf:providers_lock
+          bazel run //tf:providers_lock -- --check
+          bazel clean --expunge
+          bazel query "tests(//...)" | xargs -n1 bazel test
         working-directory: tests/bcr_tofu
 
       # Verified hashes with no lock file: strict, so the build only passes

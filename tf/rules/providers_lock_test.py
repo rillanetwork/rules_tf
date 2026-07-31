@@ -117,11 +117,17 @@ class VersionSetsTest(unittest.TestCase):
 
 class LocalNamesTest(unittest.TestCase):
     def test_transliterates_to_what_terraform_accepts(self):
-        # Letters, digits and dashes only, with no leading or trailing dash.
+        # Letters, digits and dashes only, a letter first, no trailing dash.
         self.assertEqual(
             local_names(["registry.terraform.io/hashicorp/random"]),
-            {"registry.terraform.io/hashicorp/random": "registry-terraform-io-hashicorp-random"},
+            {"registry.terraform.io/hashicorp/random": "p-registry-terraform-io-hashicorp-random"},
         )
+
+    def test_starts_with_a_letter_even_for_a_numeric_host(self):
+        # terraform rejects a local name that opens with a digit, which a host
+        # like an IP-addressed private registry would otherwise produce.
+        for name in local_names(["10.0.0.1/acme/thing"]).values():
+            self.assertRegex(name, r"^[a-z][a-z0-9-]*$")
 
     def test_breaks_a_collision_between_addresses_that_transliterate_alike(self):
         names = local_names(["tf.example.com/a/b", "tf-example-com/a/b"])
@@ -177,6 +183,9 @@ class MergeIntoLockfileTest(unittest.TestCase):
                 "verified/registry.terraform.io/hashicorp/null/3.1.1": {"zh": ["aa", "bb"]},
             },
         )
+        # The write is staged beside the lockfile and moved into place; nothing
+        # of it may be left in the consumer's workspace.
+        self.assertFalse(os.path.exists(path + ".tmp"))
 
     def test_leaves_another_toolchains_hashes_alone(self):
         # One target covers one toolchain; a module may declare several.

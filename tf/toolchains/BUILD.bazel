@@ -1,21 +1,31 @@
+load(":utils_test.bzl", "utils_test_suite")
+
 package(default_applicable_licenses = ["//:license"])
 
+# Covers the parts of utils.bzl that need no registry: the semver comparator and
+# constraint solver, the lock parser, and the facts helpers.
+utils_test_suite()
+
+# The test itself is not distributed: it is the only .bzl here that a consumer
+# never loads, and it depends on bazel_skylib's unittest.
 filegroup(
     name = "standard_package",
     srcs = [
         "BUILD.bazel",
-    ] + glob([
-        "*.bzl",
-    ]),
+    ] + glob(
+        ["*.bzl"],
+        exclude = ["*_test.bzl"],
+    ),
     visibility = [
         "//tf:__pkg__",
     ],
 )
 
 exports_files(
-    glob([
-        "*.bzl",
-    ]),
+    glob(
+        ["*.bzl"],
+        exclude = ["*_test.bzl"],
+    ),
     visibility = [
         "//tf:__pkg__",
     ],
