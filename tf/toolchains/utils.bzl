@@ -579,10 +579,11 @@ def verified_fact_key(host, namespace, provider_type, version):
         version = version,
     )
 
-# The platforms a tf toolchain can run on, and so the only ones whose packages
-# can ever have been resolved. Enumerated because `module_ctx.facts` is a
-# lookup with no iteration: carrying another host's coordinates forward means
-# asking for each key by name.
+# The platforms a tf toolchain can run on, and so the set whose package
+# coordinates every resolution records -- one lockfile then serves every machine
+# in a team, whichever wrote it. Enumerated rather than discovered because
+# `module_ctx.facts` is a lookup with no iteration, so a platform's coordinates
+# can only be asked for by name.
 MIRROR_PLATFORMS = [
     "linux_amd64",
     "linux_arm64",
@@ -610,11 +611,11 @@ def resolve_providers(ctx, entries, default_host, os, arch, facts):
     in flight before any is awaited, then every metadata request likewise, so a
     manifest of N providers costs two rounds of latency instead of 2N.
 
-    Only the host platform is resolved, matching the host-scoped toolchain repo.
-    Coordinates already recorded for the other platforms are carried through
-    untouched, so building on each host in turn accumulates one lockfile
-    covering them all -- the property terraform gets from a multi-platform
-    `.terraform.lock.hcl`.
+    Coordinates are resolved for every platform in `MIRROR_PLATFORMS`, so one
+    build writes a lockfile that covers them all -- the property terraform gets
+    from a multi-platform `.terraform.lock.hcl`. Only the host's package is
+    downloaded; the others cost one small metadata GET each. A platform a
+    provider does not publish is skipped rather than fatal.
 
     Args:
       ctx: the module extension's `module_ctx`.
@@ -678,74 +679,117 @@ def resolve_providers(ctx, entries, default_host, os, arch, facts):
     targets = _dedupe_targets(targets)
 
     platform = "%s_%s" % (os, arch)
+
+    # Metadata is resolved for every platform a toolchain can run on, not just
+    # the host, so the lockfile a build writes is complete whichever machine
+    # wrote it. Resolving only the host would leave every other platform to
+    # append its own facts later, which dirties the lockfile on the next machine
+    # to build -- enough to fail a CI job that gates on a clean tree. Only the
+    # host's package is downloaded; the rest cost one small GET each, all in
+    # flight together.
+    wanted_platforms = list(MIRROR_PLATFORMS)
+    if platform not in wanted_platforms:
+        wanted_platforms.append(platform)
+
+    requests = []
     for t in targets:
-        t["meta"] = facts.get(package_fact_key(
-            t["host"],
-            t["namespace"],
-            t["type"],
-            t["version"],
-            platform,
-        ))
+        t["metas"] = {}
+        for p in wanted_platforms:
+            remembered = facts.get(package_fact_key(
+                t["host"],
+                t["namespace"],
+                t["type"],
+                t["version"],
+                p,
+            ))
+            if remembered:
+                t["metas"][p] = remembered
+            else:
+                requests.append({"target": t, "platform": p})
 
-    unresolved = [t for t in targets if not t["meta"]]
-    if len(unresolved) > 0:
-        ctx.report_progress("Resolving %d provider(s) from registry" % len(unresolved))
-
-    for t in unresolved:
-        if "base" not in t:
+    # A host whose API base is not yet known would need service discovery, which
+    # is a hard failure. Worth it for the host platform, whose package is about
+    # to be fetched; not worth it for the others, whose absence only costs the
+    # lockfile some completeness. This is what lets a workspace resolve entirely
+    # from facts against a registry that no longer answers.
+    for r in requests:
+        t = r["target"]
+        if r["platform"] == platform and "base" not in t:
             t["base"] = _providers_base_url(client, t["host"])
 
-        t["meta_url"] = "{base}{ns}/{type}/{version}/download/{os}/{arch}".format(
+    requests = [r for r in requests if "base" in r["target"] or r["target"]["host"] in client["bases"]]
+    if len(requests) > 0:
+        ctx.report_progress("Resolving %d provider platform(s) from registry" % len(requests))
+
+    for r in requests:
+        t = r["target"]
+        p = r["platform"]
+        if "base" not in t:
+            t["base"] = client["bases"][t["host"]]
+
+        p_os, _, p_arch = p.partition("_")
+        r["url"] = "{base}{ns}/{type}/{version}/download/{os}/{arch}".format(
             base = t["base"],
             ns = t["namespace"],
             type = t["type"],
             version = t["version"],
-            os = os,
-            arch = arch,
+            os = p_os,
+            arch = p_arch,
         )
 
         # The metadata JSON is not content-addressable (its sha is unknown ahead
         # of time), so this small fetch is live the first time it is asked for;
         # thereafter the fact answers it. Each lands in its own path to avoid
-        # collisions between two versions of one provider.
-        t["meta_file"] = "provider_meta_{host}_{ns}_{type}_{version}.json".format(
+        # collisions between two versions or two platforms of one provider.
+        r["file"] = "provider_meta_{host}_{ns}_{type}_{version}_{platform}.json".format(
             host = t["host"].replace(".", "_").replace(":", "_"),
             ns = t["namespace"],
             type = t["type"],
             version = t["version"],
+            platform = p,
         )
 
         # allow_fail lets the actionable messages below surface instead of
         # Bazel's raw HTTP error, which does not say which entry was at fault.
-        t["pending"] = ctx.download(
-            url = [t["meta_url"]],
-            output = t["meta_file"],
+        r["pending"] = ctx.download(
+            url = [r["url"]],
+            output = r["file"],
             allow_fail = True,
             headers = auth_headers(client, t["host"]),
             block = False,
         )
 
-    for t in unresolved:
-        if not t["pending"].wait().success:
-            fail(("failed to fetch provider metadata for %s (%s/%s) from %s -- check that the " +
+    for r in requests:
+        t = r["target"]
+        p = r["platform"]
+
+        # Only the host platform's metadata is required. A provider that ships
+        # no package for one of the others is ordinary -- it simply goes
+        # unrecorded, rather than failing a build that was never going to fetch
+        # it.
+        if not r["pending"].wait().success:
+            if p != platform:
+                continue
+            fail(("failed to fetch provider metadata for %s (%s) from %s -- check that the " +
                   "source and version exist in the registry") % (
                 _provider_label(t),
-                os,
-                arch,
-                t["meta_url"],
+                p,
+                r["url"],
             ))
 
-        meta = json.decode(ctx.read(t["meta_file"]))
+        meta = json.decode(ctx.read(r["file"]))
 
-        for field in ["download_url", "shasum"]:
-            if not meta.get(field):
-                fail("registry response for %s (%s) has no '%s'" % (
-                    _provider_label(t),
-                    t["meta_url"],
-                    field,
-                ))
+        missing = [f for f in ["download_url", "shasum"] if not meta.get(f)]
+        if len(missing) > 0:
+            if p != platform:
+                continue
+            fail("registry response for %s (%s) has no '%s'" % (
+                _provider_label(t),
+                r["url"],
+                missing[0],
+            ))
 
-        t["meta"] = {"download_url": meta["download_url"], "sha256": meta["shasum"]}
+        t["metas"][p] = {"download_url": meta["download_url"], "sha256": meta["shasum"]}
 
     # Built fresh rather than merged into what was read: `module_ctx.facts` is a
     # lookup, not an iterable, so the previous table cannot be enumerated. The
@@ -754,22 +798,17 @@ def resolve_providers(ctx, entries, default_host, os, arch, facts):
     new_facts = dict(spec_facts)
     packages = []
     for t in targets:
-        new_facts[package_fact_key(
-            t["host"],
-            t["namespace"],
-            t["type"],
-            t["version"],
-            platform,
-        )] = t["meta"]
+        for p, meta in t["metas"].items():
+            new_facts[package_fact_key(
+                t["host"],
+                t["namespace"],
+                t["type"],
+                t["version"],
+                p,
+            )] = meta
 
-        # Whatever the other hosts resolved for this same version stays put.
-        for other in MIRROR_PLATFORMS:
-            if other == platform:
-                continue
-            key = package_fact_key(t["host"], t["namespace"], t["type"], t["version"], other)
-            remembered = facts.get(key)
-            if remembered:
-                new_facts[key] = remembered
+        if platform not in t["metas"]:
+            fail("no package coordinates resolved for %s on %s" % (_provider_label(t), platform))
 
         packages.append({
             "source": t["source"],
@@ -777,8 +816,8 @@ def resolve_providers(ctx, entries, default_host, os, arch, facts):
             "namespace": t["namespace"],
             "type": t["type"],
             "version": t["version"],
-            "download_url": t["meta"]["download_url"],
-            "sha256": t["meta"]["sha256"],
+            "download_url": t["metas"][platform]["download_url"],
+            "sha256": t["metas"][platform]["sha256"],
         })
 
     return packages, new_facts

@@ -107,9 +107,17 @@ Pinning is still the clearer form, since the manifest then says outright what th
 
 ### Multiple platforms
 
-Only the host platform is resolved on any given run, but coordinates already recorded for the other platforms
-are carried through untouched. Building on each host in turn therefore accumulates one lockfile covering them
-all - the property terraform gets from a multi-platform `.terraform.lock.hcl`.
+Coordinates are recorded for every platform a toolchain can run on - `linux_amd64`, `linux_arm64`,
+`darwin_amd64`, `darwin_arm64` - not only for the host. One build therefore writes a lockfile that serves every
+machine on the team, which is the property terraform gets from a multi-platform `.terraform.lock.hcl`.
+
+Only the host's package is downloaded. The others cost one small metadata request each, issued together with the
+host's, so covering four platforms is not four times the work. A platform a given provider does not publish is
+simply left unrecorded rather than failing the build.
+
+This matters more than it first appears: were only the host resolved, the next machine to build would append its
+own platform's facts, and a repository that gates CI on a clean working tree would fail on the resulting
+`MODULE.bazel.lock` diff.
 
 ### Enforcement
 
@@ -226,7 +234,8 @@ another platform's (genuinely signed) package - a broken build, not an avenue fo
 
 ## What is mirrored
 
-Only the host platform is fetched, matching the host-scoped toolchain repository. Providers are stored unpacked,
+Only the host platform's packages are fetched, matching the host-scoped toolchain repository - coordinates are
+recorded for all four, as [above](#multiple-platforms). Providers are stored unpacked,
 in the layout `mirror/<host>/<namespace>/<type>/<version>/<os>_<arch>/`, which lets downstream `init` symlink a
 plugin into each module's `.terraform/providers/` rather than extracting a fresh copy per target.
 
