@@ -104,9 +104,9 @@ built. Pinning is recommended - see [docs/mirror.md](docs/mirror.md) for the ver
 and how the resolved set is published.
 
 Resolution happens in the module extension, so the version a constraint selected and each package's URL and
-sha256 are recorded in `MODULE.bazel.lock` - as repository attributes and as extension facts. There is no second
-lock file to maintain, constraints do not drift between builds, and a subsequent build makes no registry calls
-at all. See [docs/mirror.md](docs/mirror.md#where-the-resolved-mirror-is-recorded).
+sha256 are recorded in `MODULE.bazel.lock`, as extension facts. There is no second lock file to maintain,
+constraints do not drift between builds, and a subsequent build makes no registry calls at all. See
+[docs/mirror.md](docs/mirror.md#where-the-resolved-mirror-is-recorded).
 
 A package can be admitted on a signature-verified hash rather than on the registry's word. `bazel run` a
 `tf_providers_lock` target and it records, in that same `MODULE.bazel.lock`, the `zh:` hashes that

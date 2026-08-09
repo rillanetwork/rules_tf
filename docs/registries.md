@@ -21,6 +21,8 @@ tf.download(
 ```
 
 Entries without a host default to `registry.terraform.io`, or `registry.opentofu.org` when `use_tofu = True`.
+A host may carry an explicit port (`tf.mycorp.example.com:8443/mycorp/widget:1.2.0`); only the last colon in an
+entry separates the version.
 
 ## Service discovery
 
@@ -43,8 +45,8 @@ A bearer token is discovered in this order:
 1. **`TF_TOKEN_<host>`**, with periods encoded as underscores - `TF_TOKEN_mycorp_example_com`. A hyphen in the
    hostname has no valid spelling in an environment variable name, so a double underscore stands in for it
    (`my-registry.example.com` → `TF_TOKEN_my__registry_example_com`).
-2. **Terraform's JSON credentials file**, at `~/.terraform.d/credentials.tfrc.json`, or at `$TF_CLI_CONFIG_FILE`
-   when that points at a `.json` file:
+2. **Terraform's JSON credentials file**, at `~/.terraform.d/credentials.tfrc.json`, which is where
+   `terraform login` writes:
 
    ```json
    {
@@ -54,8 +56,16 @@ A bearer token is discovered in this order:
    }
    ```
 
-   The HCL `.tfrc` format is not read, as Starlark cannot parse HCL. Use the JSON form or an environment
-   variable.
+3. **A `credentials` block in the HCL CLI configuration**, at `~/.terraformrc`:
+
+   ```hcl
+   credentials "mycorp.example.com" {
+     token = "..."
+   }
+   ```
+
+   Only that block shape is understood, not general HCL. `$TF_CLI_CONFIG_FILE`, when set, replaces both default
+   paths and is read as JSON or HCL according to its extension.
 
 The credentials file is read without registering a Bazel watch, so rotating a token does not by itself
 invalidate the mirror. The `TF_TOKEN_*` and `TF_CLI_CONFIG_FILE` variables are read through `ctx.getenv`, so
@@ -74,9 +84,9 @@ packages from its own host does receive the token.
 ### Credentials when locking hashes
 
 The `tf_providers_lock` target shells out to `terraform providers lock`, so that step authenticates the way
-terraform does rather than the way the extension above does. The overlap covers the usual setup - `TF_TOKEN_<host>`
-and `~/.terraform.d/credentials.tfrc.json` are read by both - but terraform additionally accepts the HCL `.tfrc`
-credentials format and a `credentials_helper`, neither of which the extension can use. A token that only
+terraform does rather than the way the extension above does. The overlap covers the usual setups - `TF_TOKEN_<host>`,
+`~/.terraform.d/credentials.tfrc.json` and a `credentials` block in `~/.terraformrc` are read by both - but
+terraform additionally accepts a `credentials_helper`, which the extension cannot use. A token that only
 terraform can find will lock hashes for a mirror the extension then cannot fetch.
 
 See [mirror.md](mirror.md#verified-hashes) for what the target does with them.

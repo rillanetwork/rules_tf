@@ -71,16 +71,9 @@ alongside the version change. The `facts` section is where the mirror is recorde
 Resolution happens in the module extension, not in the download repository, so its results are visible to
 bzlmod and land in `MODULE.bazel.lock` - there is no second lock file to maintain.
 
-Two things are recorded there, and both are worth reviewing in a diff.
-
-**The concrete coordinates**, as attributes of the generated download repository:
-
-```json
-"attributes": {
-  "version": "1.9.5", "os": "linux", "arch": "amd64",
-  "providers_json": "[{\"source\":\"hashicorp/random\",\"version\":\"3.1.3\", ...}]"
-}
-```
+The record is the `facts` section, and it is worth reviewing in a diff. The extension is reproducible, which
+keeps it out of `moduleExtensions` altogether, so the resolved coordinates it hands the download repository as
+attributes are not written to the lockfile - the facts those attributes were derived from are.
 
 **The registry's answers**, as extension facts:
 
@@ -138,6 +131,14 @@ simply left unrecorded rather than failing the build.
 This matters more than it first appears: were only the host resolved, the next machine to build would append its
 own platform's facts, and a repository that gates CI on a clean working tree would fail on the resulting
 `MODULE.bazel.lock` diff.
+
+### When the registry cannot be reached
+
+Resolution runs during module extension evaluation, which bzlmod performs for every build in the workspace, not
+only for builds that touch terraform. A registry failure is therefore recorded rather than raised: the entries
+that could not be resolved are passed to the download repository, which fails on them when a target actually
+needs the mirror. A workspace that cannot reach its registry still builds everything else, and a lint-only
+workspace - which needs no mirror at all - is unaffected.
 
 ### Enforcement
 
