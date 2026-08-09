@@ -9,6 +9,7 @@ as "the wrong version was mirrored" rather than as a failing assertion.
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
 load(
     ":utils.bzl",
+    "hcl_credentials_token",
     "merge_provider_locks",
     "mirror_manifest",
     "parse_mirror_entries",
@@ -86,15 +87,27 @@ def _mirror_entry_test_impl(ctx):
         "hashicorp/random:3.6.0",
         "hashicorp/null:3.2.4-alpha.2",
         "tf.example.com/acme/thing:>= 1.0, < 2.0",
+        # A host may carry a port, so only the last colon separates the version.
+        "tf.example.com:8443/acme/ported:1.2.0",
     ])
 
     # A prerelease pin is an exact pin; only range syntax is a constraint.
-    asserts.equals(env, [True, True, False], [e["is_exact"] for e in parsed])
+    asserts.equals(env, [True, True, False, True], [e["is_exact"] for e in parsed])
     asserts.equals(
         env,
-        ["hashicorp/random@3.6.0", "hashicorp/null@3.2.4-alpha.2", "tf.example.com/acme/thing@>= 1.0, < 2.0"],
+        [
+            "hashicorp/random@3.6.0",
+            "hashicorp/null@3.2.4-alpha.2",
+            "tf.example.com/acme/thing@>= 1.0, < 2.0",
+            "tf.example.com:8443/acme/ported@1.2.0",
+        ],
         mirror_manifest(parsed),
     )
+
+    asserts.equals(env, ("tf.example.com:8443", "acme", "ported"), provider_source_parts(
+        "tf.example.com:8443/acme/ported",
+        "registry.terraform.io",
+    ))
 
     asserts.equals(env, ("registry.terraform.io", "hashicorp", "random"), provider_source_parts(
         "hashicorp/random",
@@ -130,22 +143,60 @@ provider "registry.terraform.io/hashicorp/random" {
 }
 """
 
+# A lock file whose hashes list is written on one line. Valid HCL, and what a
+# hand-edited or reformatted lock file may look like.
+_LOCK_ONE_LINE = """
+provider "registry.terraform.io/hashicorp/tls" {
+  version = "4.0.4"
+  hashes = ["zh:dddd", "zh:eeee"]
+}
+"""
+
 def _parse_provider_locks_test_impl(ctx):
     env = unittest.begin(ctx)
 
-    locks = parse_provider_locks([_LOCK_NULL, _LOCK_RANDOM])
+    locks = parse_provider_locks([_LOCK_NULL, _LOCK_RANDOM, _LOCK_ONE_LINE])
 
     # Keyed by address and version, since a mirror may stock several versions of
     # one provider and each needs its own lock file.
     asserts.equals(env, [
         "registry.terraform.io/hashicorp/null@3.1.1",
         "registry.terraform.io/hashicorp/random@3.1.3",
+        "registry.terraform.io/hashicorp/tls@4.0.4",
     ], sorted(locks.keys()))
+
+    # Every hash on the line is taken, and the block still closes.
+    asserts.equals(env, ["dddd", "eeee"], sorted(locks["registry.terraform.io/hashicorp/tls@4.0.4"].keys()))
 
     # h1: is dropped: it covers the extracted directory, not the package, and
     # admitting it would let a package match on a hash of something else.
     asserts.equals(env, ["aaaa", "bbbb"], sorted(locks["registry.terraform.io/hashicorp/null@3.1.1"].keys()))
     asserts.equals(env, ["cccc"], sorted(locks["registry.terraform.io/hashicorp/random@3.1.3"].keys()))
+
+    return unittest.end(env)
+
+_TERRAFORMRC = """
+# A CLI configuration, as ~/.terraformrc holds it.
+plugin_cache_dir = "$HOME/.terraform.d/plugin-cache"
+
+credentials "app.terraform.io" {
+  token = "public-token"
+}
+
+credentials "tf.example.com:8443" { token = "ported-token" }
+"""
+
+def _hcl_credentials_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    asserts.equals(env, "public-token", hcl_credentials_token(_TERRAFORMRC, "app.terraform.io"))
+
+    # A block written on one line, and a host carrying a port.
+    asserts.equals(env, "ported-token", hcl_credentials_token(_TERRAFORMRC, "tf.example.com:8443"))
+
+    # No block for the host asked about, and no accidental match on another's.
+    asserts.equals(env, "", hcl_credentials_token(_TERRAFORMRC, "registry.terraform.io"))
+    asserts.equals(env, "", hcl_credentials_token("", "app.terraform.io"))
 
     return unittest.end(env)
 
@@ -194,6 +245,7 @@ _prerelease_selection_test = unittest.make(_prerelease_selection_test_impl)
 _unsatisfiable_and_malformed_test = unittest.make(_unsatisfiable_and_malformed_test_impl)
 _mirror_entry_test = unittest.make(_mirror_entry_test_impl)
 _parse_provider_locks_test = unittest.make(_parse_provider_locks_test_impl)
+_hcl_credentials_test = unittest.make(_hcl_credentials_test_impl)
 _facts_and_merge_test = unittest.make(_facts_and_merge_test_impl)
 
 def utils_test_suite(name = "utils_test"):
@@ -205,5 +257,6 @@ def utils_test_suite(name = "utils_test"):
         _unsatisfiable_and_malformed_test,
         _mirror_entry_test,
         _parse_provider_locks_test,
+        _hcl_credentials_test,
         _facts_and_merge_test,
     )

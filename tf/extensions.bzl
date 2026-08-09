@@ -68,7 +68,7 @@ def _tf_repositories(ctx):
             tfdoc_repo_name = _repo_name(
                 module=module,
                 tool = "tfdoc",
-                index = 0,
+                index = index,
                 suffix = "_{}_{}".format(host_detected_os, host_detected_arch),
             )
             tfdoc_download(
@@ -82,7 +82,7 @@ def _tf_repositories(ctx):
             tflint_repo_name = _repo_name(
                 module=module,
                 tool = "tflint",
-                index = 0,
+                index = index,
                 suffix = "_{}_{}".format(host_detected_os, host_detected_arch),
             )
             tflint_download(
@@ -103,11 +103,10 @@ def _tf_repositories(ctx):
             if mirror == None:
                 fail("module {} is missing both mirror and mirror_json attributes; one must be set".format(module.name))
 
-            # The concrete coordinates below become repo attributes, which
-            # the lockfile records verbatim in generatedRepoSpecs, and
+            # The coordinates below reach the repo rule as attributes;
             # everything learned from the registry comes back as facts, which
-            # the lockfile persists.
-            packages, tag_facts = resolve_providers(
+            # are what the lockfile records.
+            packages, tag_facts, resolve_errors = resolve_providers(
                 ctx,
                 parse_mirror_entries(mirror),
                 DEFAULT_REGISTRY[version_tag.use_tofu],
@@ -128,12 +127,13 @@ def _tf_repositories(ctx):
                 ctx.read(lock)
                 for lock in version_tag.provider_locks
             ]))
-            if len(provider_locks) > 0 or version_tag.provider_locks_strict:
-                verify_against_provider_locks(
-                    packages,
-                    provider_locks,
-                    version_tag.provider_locks_strict,
-                )
+
+            # Unconditional: with no hashes recorded, the warning is the point.
+            verify_against_provider_locks(
+                packages,
+                provider_locks,
+                version_tag.provider_locks_strict,
+            )
 
             repo_mirrors[tf_repo_name] = mirror_manifest(packages)
 
@@ -144,6 +144,7 @@ def _tf_repositories(ctx):
                 os = host_detected_os,
                 arch = host_detected_arch,
                 providers_json = json.encode(packages),
+                resolve_errors = json.encode(resolve_errors),
             )
             if version_tag.use_tofu:
                 tofu_toolchains += [tf_repo_name]

@@ -32,6 +32,8 @@ import tempfile
 # every platform's package and the lock does not record which is which.
 VERIFIED_FACT_PREFIX = "verified"
 
+# Kept in step with `parse_provider_locks` in tf/toolchains/utils.bzl, which
+# reads the same grammar from Starlark.
 _PROVIDER_BLOCK = re.compile(
     r'provider\s+"(?P<address>[^"]+)"\s*\{(?P<body>.*?)\n\}',
     re.DOTALL,

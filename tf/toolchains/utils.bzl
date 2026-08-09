@@ -270,7 +270,8 @@ def parse_mirror_entries(mirror):
     seen = {}
     parsed = []
     for entry in mirror:
-        elems = entry.split(":")
+        # Last colon only: a host may carry a port, a version never does.
+        elems = entry.rsplit(":", 1)
         if len(elems) != 2 or elems[0] == "" or elems[1] == "":
             fail("mirror entry must be of the form '[hostname/]namespace/type:version', was: %s" % entry)
 
@@ -341,6 +342,10 @@ def new_registry_client(ctx):
         "ctx": ctx,
         "bases": dict(_KNOWN_PROVIDER_REGISTRIES),
         "tokens": {},
+        # Registry failures are collected rather than fatal, so an unrelated
+        # build in a workspace that cannot reach the registry still loads. See
+        # `resolve_providers`.
+        "errors": [],
     }
 
 def url_host(url):
@@ -359,28 +364,82 @@ def _token_env_names(host):
         return ["TF_TOKEN_" + encoded.replace("-", "__"), "TF_TOKEN_" + encoded]
     return ["TF_TOKEN_" + encoded]
 
-def _credentials_file_token(ctx, host):
-    """Reads a host token from terraform's JSON credentials file, if present."""
+def hcl_credentials_token(text, host):
+    """Reads `credentials "<host>" { token = "..." }` from a terraform CLI config.
+
+    Only that block shape is understood, not general HCL, which is the same
+    narrow-subset approach `parse_provider_locks` takes to lock files.
+
+    Args:
+      text: contents of a `.terraformrc`-style CLI configuration file.
+      host: registry hostname whose credentials block is wanted.
+
+    Returns:
+      The token, or "" when the file carries no block for that host.
+    """
+    in_block = False
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped == "" or stripped.startswith("#") or stripped.startswith("//"):
+            continue
+
+        if in_block:
+            if stripped.startswith("}"):
+                in_block = False
+            elif stripped.startswith("token"):
+                parts = stripped.split("\"")
+                if len(parts) >= 2:
+                    return parts[1]
+            continue
+
+        if stripped.startswith("credentials "):
+            parts = stripped.split("\"")
+            if len(parts) >= 2 and parts[1] == host:
+                # The whole block may be written on one line.
+                if len(parts) >= 4 and "token" in parts[2]:
+                    return parts[3]
+                in_block = True
+
+    return ""
+
+def _credentials_file_paths(ctx):
+    """CLI configuration files that may carry a `credentials` block for a host."""
     path = ctx.getenv("TF_CLI_CONFIG_FILE")
     if path:
-        # A .tfrc is HCL, which Starlark cannot parse; only the JSON
-        # credentials format is understood.
-        if not path.endswith(".json"):
-            return ""
-    else:
-        home = ctx.getenv("HOME")
-        if not home:
-            return ""
-        path = home + "/.terraform.d/credentials.tfrc.json"
+        return [path]
 
-    p = ctx.path(path)
-    if not p.exists:
-        return ""
+    home = ctx.getenv("HOME")
+    if not home:
+        return []
 
-    # watch = "no": the file lives outside the workspace, and rotating a
-    # credential should not by itself invalidate the mirror.
-    creds = json.decode(ctx.read(p, watch = "no")).get("credentials", {})
-    return creds.get(host, {}).get("token", "")
+    # `terraform login` writes the JSON form; a hand-maintained CLI config is
+    # HCL. Both are read, in that order.
+    return [
+        home + "/.terraform.d/credentials.tfrc.json",
+        home + "/.terraformrc",
+    ]
+
+def _credentials_file_token(ctx, host):
+    """Reads a host token from terraform's CLI config, in either JSON or HCL form."""
+    for path in _credentials_file_paths(ctx):
+        p = ctx.path(path)
+        if not p.exists:
+            continue
+
+        # watch = "no": the file lives outside the workspace, and rotating a
+        # credential should not by itself invalidate the mirror.
+        text = ctx.read(p, watch = "no")
+
+        if path.endswith(".json"):
+            creds = json.decode(text).get("credentials", {})
+            token = creds.get(host, {}).get("token", "")
+        else:
+            token = hcl_credentials_token(text, host)
+
+        if token:
+            return token
+
+    return ""
 
 def auth_headers(client, host):
     """Authorization header for host, or an empty dict when unauthenticated.
@@ -411,7 +470,10 @@ def auth_headers(client, host):
     return {"Authorization": "Bearer " + tokens[host]}
 
 def _providers_base_url(client, host):
-    """Returns host's providers.v1 API base URL, via remote service discovery."""
+    """Returns host's providers.v1 API base URL, via remote service discovery.
+
+    Returns "" when the host cannot be discovered, recording why on the client.
+    """
     bases = client["bases"]
     if host in bases:
         return bases[host]
@@ -427,8 +489,12 @@ def _providers_base_url(client, host):
         headers = auth_headers(client, host),
     )
     if not res.success:
-        fail(("failed service discovery for registry host '%s' (%s) -- the host must serve a " +
-              "terraform service-discovery document") % (host, url))
+        client["errors"].append(
+            ("failed service discovery for registry host '%s' (%s) -- the host must serve a " +
+             "terraform service-discovery document") % (host, url),
+        )
+        bases[host] = ""
+        return ""
 
     # Not cleaned up: module_ctx has no delete(), and these land in the
     # extension's own working directory rather than in any repo.
@@ -436,8 +502,12 @@ def _providers_base_url(client, host):
 
     path = doc.get("providers.v1")
     if not path:
-        fail(("registry host '%s' does not advertise a provider registry: no 'providers.v1' " +
-              "key in %s") % (host, url))
+        client["errors"].append(
+            ("registry host '%s' does not advertise a provider registry: no 'providers.v1' " +
+             "key in %s") % (host, url),
+        )
+        bases[host] = ""
+        return ""
 
     # providers.v1 may be an absolute URL or a path relative to the host.
     if path.startswith("http://") or path.startswith("https://"):
@@ -480,7 +550,10 @@ def _resolve_constraints(ctx, client, targets):
     The registry's version listing is fetched for each constrained provider,
     all in flight at once. Targets that already carry an exact pin cost nothing.
     """
-    constrained = [t for t in targets if not t["is_exact"]]
+
+    # A target whose host could not be discovered has already recorded an error;
+    # there is no base URL to ask against, so it is left unresolved.
+    constrained = [t for t in targets if not t["is_exact"] and t.get("base")]
     if len(constrained) == 0:
         return targets
 
@@ -516,26 +589,35 @@ def _resolve_constraints(ctx, client, targets):
 
     for key, listing in listings.items():
         if not listing["pending"].wait().success:
-            fail("failed to list versions of %s from %s" % (key, listing["url"]))
+            client["errors"].append(
+                "failed to list versions of %s from %s" % (key, listing["url"]),
+            )
+            continue
 
         doc = json.decode(ctx.read(listing["file"]))
         listing["available"] = [v["version"] for v in doc.get("versions", []) if v.get("version")]
 
     for t in constrained:
         listing = listings[t["listing"]]
-        available = listing["available"]
+        available = listing.get("available")
+        if available == None:
+            continue
+
         selected = select_matching_version(available, t["version"])
         if selected == "":
-            fail(("no published version of %s/%s/%s satisfies '%s' (%d version(s) offered by " +
-                  "%s). Note that prereleases are never selected by a constraint -- pin the " +
-                  "exact version to mirror one.") % (
-                t["host"],
-                t["namespace"],
-                t["type"],
-                t["version"],
-                len(available),
-                listing["url"],
-            ))
+            client["errors"].append(
+                ("no published version of %s/%s/%s satisfies '%s' (%d version(s) offered by " +
+                 "%s). Note that prereleases are never selected by a constraint -- pin the " +
+                 "exact version to mirror one.") % (
+                    t["host"],
+                    t["namespace"],
+                    t["type"],
+                    t["version"],
+                    len(available),
+                    listing["url"],
+                ),
+            )
+            continue
 
         t["version"] = selected
         t["is_exact"] = True
@@ -594,13 +676,13 @@ MIRROR_PLATFORMS = [
 def resolve_providers(ctx, entries, default_host, os, arch, facts):
     """Resolves every mirror entry to a concrete version, package URL and sha256.
 
-    This runs in the module extension rather than in the download repo, for two
-    reasons. The coordinates it produces are passed to the repo rule as plain
-    attributes, so `MODULE.bazel.lock` records in `generatedRepoSpecs` exactly
-    which version a constraint selected. And what it learns from the registry is
-    returned as extension facts, which bzlmod persists in that same lockfile --
-    so a second evaluation resolves from the lockfile and reaches the registry
-    not at all.
+    This runs in the module extension rather than in the download repo so that
+    what it learns from the registry is returned as extension facts, which
+    bzlmod persists in `MODULE.bazel.lock` -- a second evaluation then resolves
+    from the lockfile and reaches the registry not at all. The facts are the
+    whole of that record: the extension is reproducible, which keeps it out of
+    the lockfile's `moduleExtensions` section, so the coordinates it passes to
+    the repo rule as attributes are not themselves written down.
 
     `facts` is the previously persisted table (`module_ctx.facts`). A hit on a
     `resolve/` key skips the version listing; a hit on a `package/` key skips
@@ -626,8 +708,15 @@ def resolve_providers(ctx, entries, default_host, os, arch, facts):
       facts: the previously persisted fact table, `module_ctx.facts`.
 
     Returns:
-      A (packages, facts) tuple: packages carries the concrete coordinates for
-      this platform, facts is the table to hand back to bzlmod.
+      A (packages, facts, errors) tuple: packages carries the concrete
+      coordinates for this platform, facts is the table to hand back to bzlmod,
+      and errors names every entry that could not be resolved.
+
+      A registry failure is reported rather than fatal. Extension evaluation is
+      not lazy, so failing here would break every build in the workspace,
+      including ones that touch no terraform at all. The caller passes the
+      errors down to the download repository, which fails on them when a target
+      actually needs the mirror.
     """
     client = new_registry_client(ctx)
 
@@ -671,10 +760,14 @@ def resolve_providers(ctx, entries, default_host, os, arch, facts):
     spec_facts = {}
     for t in targets:
         spec = t.get("spec")
-        if spec:
+        if spec and t["is_exact"]:
             spec_facts[resolve_fact_key(t["host"], t["namespace"], t["type"], spec)] = {
                 "version": t["version"],
             }
+
+    # A constraint left unresolved has recorded its error already; it carries no
+    # concrete version, so there is nothing further to ask about it.
+    targets = [t for t in targets if t["is_exact"]]
 
     targets = _dedupe_targets(targets)
 
@@ -708,23 +801,27 @@ def resolve_providers(ctx, entries, default_host, os, arch, facts):
                 requests.append({"target": t, "platform": p})
 
     # A host whose API base is not yet known would need service discovery, which
-    # is a hard failure. Worth it for the host platform, whose package is about
-    # to be fetched; not worth it for the others, whose absence only costs the
-    # lockfile some completeness. This is what lets a workspace resolve entirely
-    # from facts against a registry that no longer answers.
+    # costs a round trip and can fail. Worth it for the host platform, whose
+    # package is about to be fetched; not worth it for the others, whose absence
+    # only costs the lockfile some completeness. This is what lets a workspace
+    # resolve entirely from facts against a registry that no longer answers.
     for r in requests:
         t = r["target"]
-        if r["platform"] == platform and "base" not in t:
+        if r["platform"] == platform and not t.get("base"):
             t["base"] = _providers_base_url(client, t["host"])
 
-    requests = [r for r in requests if "base" in r["target"] or r["target"]["host"] in client["bases"]]
+    requests = [
+        r
+        for r in requests
+        if r["target"].get("base") or client["bases"].get(r["target"]["host"])
+    ]
     if len(requests) > 0:
         ctx.report_progress("Resolving %d provider platform(s) from registry" % len(requests))
 
     for r in requests:
         t = r["target"]
         p = r["platform"]
-        if "base" not in t:
+        if not t.get("base"):
             t["base"] = client["bases"][t["host"]]
 
         p_os, _, p_arch = p.partition("_")
@@ -770,12 +867,15 @@ def resolve_providers(ctx, entries, default_host, os, arch, facts):
         if not r["pending"].wait().success:
             if p != platform:
                 continue
-            fail(("failed to fetch provider metadata for %s (%s) from %s -- check that the " +
-                  "source and version exist in the registry") % (
-                _provider_label(t),
-                p,
-                r["url"],
-            ))
+            client["errors"].append(
+                ("failed to fetch provider metadata for %s (%s) from %s -- check that the " +
+                 "source and version exist in the registry") % (
+                    _provider_label(t),
+                    p,
+                    r["url"],
+                ),
+            )
+            continue
 
         meta = json.decode(ctx.read(r["file"]))
 
@@ -783,11 +883,12 @@ def resolve_providers(ctx, entries, default_host, os, arch, facts):
         if len(missing) > 0:
             if p != platform:
                 continue
-            fail("registry response for %s (%s) has no '%s'" % (
+            client["errors"].append("registry response for %s (%s) has no '%s'" % (
                 _provider_label(t),
                 r["url"],
                 missing[0],
             ))
+            continue
 
         t["metas"][p] = {"download_url": meta["download_url"], "sha256": meta["shasum"]}
 
@@ -808,7 +909,10 @@ def resolve_providers(ctx, entries, default_host, os, arch, facts):
             )] = meta
 
         if platform not in t["metas"]:
-            fail("no package coordinates resolved for %s on %s" % (_provider_label(t), platform))
+            client["errors"].append(
+                "no package coordinates resolved for %s on %s" % (_provider_label(t), platform),
+            )
+            continue
 
         packages.append({
             "source": t["source"],
@@ -820,7 +924,7 @@ def resolve_providers(ctx, entries, default_host, os, arch, facts):
             "sha256": t["metas"][platform]["sha256"],
         })
 
-    return packages, new_facts
+    return packages, new_facts, client["errors"]
 
 def download_providers(ctx, packages, os, arch):
     """Unpacks every resolved package into the filesystem-mirror layout.
@@ -864,7 +968,10 @@ def download_providers(ctx, packages, os, arch):
         # download + extract rather than download_and_extract: only `download`
         # accepts block = False, and putting every package in flight at once is
         # worth staging the zip, which is deleted as soon as it is unpacked.
-        archive = "provider_pkg_{ns}_{type}_{version}.zip".format(
+        # Host-qualified like the extract destination: two registries may serve
+        # the same coordinate, and both are fetched concurrently.
+        archive = "provider_pkg_{host}_{ns}_{type}_{version}.zip".format(
+            host = p["host"].replace(".", "_").replace(":", "_"),
             ns = p["namespace"],
             type = p["type"],
             version = p["version"],
@@ -872,6 +979,7 @@ def download_providers(ctx, packages, os, arch):
         staged.append({
             "package": p,
             "archive": archive,
+            "headers": package_headers,
             "output": "mirror/{host}/{ns}/{type}/{version}/{os}_{arch}".format(
                 host = p["host"],
                 ns = p["namespace"],
@@ -892,13 +1000,154 @@ def download_providers(ctx, packages, os, arch):
 
     for s in staged:
         if not s["pending"].wait().success:
-            fail("failed to download provider %s from %s" % (
-                _provider_label(s["package"]),
-                s["package"]["download_url"],
-            ))
+            p = s["package"]
+
+            # allow_fail hides why: re-issue unsuppressed so Bazel's own error
+            # distinguishes a checksum mismatch from a network failure.
+            ctx.report_progress("Re-fetching %s to report why it failed" % _provider_label(p))
+            ctx.download(
+                url = [p["download_url"]],
+                sha256 = p["sha256"],
+                output = s["archive"],
+                headers = s["headers"],
+            )
 
         ctx.extract(archive = s["archive"], output = s["output"])
         ctx.delete(s["archive"])
+
+TF_DOWNLOAD_ATTRS = {
+    "version": attr.string(mandatory = True),
+    "os": attr.string(mandatory = True),
+    "arch": attr.string(mandatory = True),
+    "providers_json": attr.string(
+        mandatory = True,
+        doc = "JSON list of the providers to mirror, each already resolved by the " +
+              "module extension to a concrete version, download_url and sha256. " +
+              "The extension is reproducible, so this is not itself recorded in " +
+              "MODULE.bazel.lock; the facts it was derived from are.",
+    ),
+    "resolve_errors": attr.string(
+        default = "[]",
+        doc = "JSON list of the mirror entries the module extension could not resolve. " +
+              "Reported here rather than there so that a registry the extension cannot " +
+              "reach fails only the builds that need the mirror.",
+    ),
+}
+
+def tf_download_impl(ctx, tool, build_tpl, url_template, sha256sums_template):
+    """Shared implementation of the terraform and tofu download repository rules.
+
+    The two differ only in what they are called and where their releases live.
+
+    Args:
+      ctx: the download repository's `repository_ctx`.
+      tool: the tool's name, which names both its archive and its output directory.
+      build_tpl: Label of the toolchain BUILD template to instantiate.
+      url_template: release archive URL, taking `{version}` and `{file}`.
+      sha256sums_template: the release's SHA256SUMS URL, taking `{version}`.
+    """
+    resolve_errors = json.decode(ctx.attr.resolve_errors)
+    if len(resolve_errors) > 0:
+        fail("the provider mirror could not be resolved:\n  " + "\n  ".join(resolve_errors))
+
+    ctx.report_progress("Downloading %s" % tool)
+
+    ctx.template(
+        "BUILD",
+        build_tpl,
+        executable = False,
+        substitutions = {
+            "{version}": ctx.attr.version,
+            "{os}": ctx.attr.os,
+            "{arch}": ctx.attr.arch,
+        },
+    )
+
+    file = "{tool}_{version}_{os}_{arch}.zip".format(
+        tool = tool,
+        version = ctx.attr.version,
+        os = ctx.attr.os,
+        arch = ctx.attr.arch,
+    )
+    url = url_template.format(version = ctx.attr.version, file = file)
+
+    ctx.download(
+        url = [sha256sums_template.format(version = ctx.attr.version)],
+        output = "sha256sums",
+    )
+
+    data = ctx.read("sha256sums")
+    sha256sum = get_sha256sum(data, file)
+    if sha256sum == None or sha256sum == "":
+        fail("Could not find sha256sum for file {}".format(file))
+
+    res = ctx.download_and_extract(
+        url = url,
+        sha256 = sha256sum,
+        type = "zip",
+        output = tool,
+    )
+
+    if not res.success:
+        fail("!failed to dl: ", url)
+
+    # Every coordinate was resolved by the module extension, so this reaches no
+    # registry: known URLs against known hashes, which makes each package
+    # content-addressed for --repository_cache and lets a warm cache serve the
+    # whole mirror offline.
+    #
+    # Each (source, version) is fetched independently, so multiple versions of a
+    # single source coexist in the mirror -- terraform would otherwise AND their
+    # required_providers constraints into an unsatisfiable set.
+    packages = json.decode(ctx.attr.providers_json)
+    download_providers(ctx, packages, ctx.attr.os, ctx.attr.arch)
+
+    # The manifest as it actually landed, for a build to inspect. Constraints
+    # are already resolved by this point, so these are all concrete pins.
+    ctx.file(
+        "mirror_versions.json",
+        content = json.encode(mirror_manifest(packages)),
+    )
+
+_DECLARE_TOOLCHAIN_CHUNK = """
+tf_toolchain(
+   name = "{toolchain_repo}_toolchain_impl",
+   tf = "@{toolchain_repo}//:runtime",
+   mirror = "@{toolchain_repo}//:mirror",
+   mirror_versions = {mirror_versions},
+   default_registry = "{default_registry}",
+)
+
+toolchain(
+  name = "{toolchain_repo}_toolchain",
+  exec_compatible_with = platforms["{os}_{arch}"]["exec_compatible_with"],
+  target_compatible_with = platforms["{os}_{arch}"]["target_compatible_with"],
+  toolchain = ":{toolchain_repo}_toolchain_impl",
+  toolchain_type = "@rules_tf//:tf_toolchain_type",
+  visibility = ["//visibility:public"],
+)
+"""
+
+def tf_declare_toolchain_chunk(tool):
+    """The BUILD chunk declaring one tf toolchain, aliased under the tool's name."""
+    return _DECLARE_TOOLCHAIN_CHUNK + """
+alias(
+    name = "%s",
+    actual = "@{toolchain_repo}//:runtime",
+)
+""" % tool
+
+def _zh_hashes_in_line(text):
+    """Every `zh:` hash quoted on one line, with the prefix stripped."""
+    found = []
+    parts = text.split("\"")
+
+    # Quoted values are the odd-numbered fields of a split on the quote.
+    for i in range(1, len(parts), 2):
+        if parts[i].startswith("zh:"):
+            found.append(parts[i][len("zh:"):])
+
+    return found
 
 def parse_provider_locks(documents):
     """Merges `.terraform.lock.hcl` documents into {source@version: {zh hash: True}}.
@@ -916,7 +1165,8 @@ def parse_provider_locks(documents):
     the package, and only for the platforms the lock was generated for.
 
     The grammar used here is the narrow subset terraform itself emits, not
-    general HCL.
+    general HCL. Kept in step with `parse_lock` in tf/rules/providers_lock.py,
+    which reads the same files where terraform runs.
 
     Args:
       documents: contents of one or more `.terraform.lock.hcl` files.
@@ -948,16 +1198,15 @@ def parse_provider_locks(documents):
                 continue
 
             if in_hashes:
-                if text.startswith("]"):
+                hashes += _zh_hashes_in_line(text)
+                if "]" in text:
                     in_hashes = False
-                elif "\"" in text:
-                    value = text.split("\"")[1]
-                    if value.startswith("zh:"):
-                        hashes.append(value[len("zh:"):])
                 continue
 
             if text.startswith("hashes"):
-                in_hashes = True
+                # `hashes = [...]` may be written on one line or span several.
+                hashes += _zh_hashes_in_line(text)
+                in_hashes = "]" not in text
             elif text.startswith("version"):
                 parts = text.split("\"")
                 if len(parts) >= 2:

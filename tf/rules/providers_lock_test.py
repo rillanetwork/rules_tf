@@ -55,6 +55,20 @@ class ParseLockTest(unittest.TestCase):
             },
         )
 
+    def test_reads_a_hashes_list_written_on_one_line(self):
+        # The Starlark parser in tf/toolchains/utils.bzl reads the same grammar
+        # and covers this case too; the two must not diverge.
+        document = (
+            'provider "registry.terraform.io/hashicorp/tls" {\n'
+            '  version = "4.0.4"\n'
+            '  hashes = ["zh:dddd", "zh:eeee"]\n'
+            "}\n"
+        )
+        self.assertEqual(
+            parse_lock(document),
+            {("registry.terraform.io/hashicorp/tls", "4.0.4"): ["dddd", "eeee"]},
+        )
+
     def test_ignores_a_provider_with_no_zh_hashes(self):
         document = 'provider "registry.terraform.io/hashicorp/null" {\n  version = "3.1.1"\n}\n'
         self.assertEqual(parse_lock(document), {})
