@@ -83,8 +83,9 @@ jobs:
       # The expunged output base forces a cold resolution, so it goes through
       # the facts in the lockfile rather than a cached extension result -- and,
       # since packages are content-addressed, through the repository cache
-      # rather than the registry. This workspace checks its mirror against lock
-      # files it carries, which is the path that runs no lock command.
+      # rather than the registry. The run above locked one version with `tofu
+      # providers lock` against registry.opentofu.org and took the rest from a
+      # lock file, so this covers both sources of hashes being remembered.
       - name: Test tofu resolution from facts
         run: |
           bazel clean --expunge
