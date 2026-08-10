@@ -108,11 +108,11 @@ sha256 are recorded in `MODULE.bazel.lock`, as extension facts. There is no seco
 constraints do not drift between builds, and a subsequent build makes no registry calls at all. See
 [docs/mirror.md](docs/mirror.md#where-the-resolved-mirror-is-recorded).
 
-A package can be admitted on a signature-verified hash rather than on the registry's word. `bazel run` a
-`tf_providers_lock` target and it records, in that same `MODULE.bazel.lock`, the `zh:` hashes that
-`terraform providers lock` verified against the signing keys compiled into the terraform binary; every mirrored
-package is then checked against them. `provider_locks` accepts a `.terraform.lock.hcl` directly instead. See
-[docs/mirror.md](docs/mirror.md#verified-hashes).
+A package is admitted on a signature-verified hash rather than on the registry's word. As it resolves, the
+extension runs `terraform providers lock` over each new version and checks the packages against the `zh:` hashes
+that verified against the signing keys compiled into the terraform binary; the result is recorded in that same
+`MODULE.bazel.lock`, so later builds read a pin a publisher signed. `provider_locks` accepts a
+`.terraform.lock.hcl` instead. See [docs/mirror.md](docs/mirror.md#verified-hashes).
 
 ### Custom and private registries
 

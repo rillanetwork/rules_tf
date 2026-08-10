@@ -1,9 +1,0 @@
-load("@rules_tf//tf:def.bzl", "tf_providers_lock")
-
-# Regenerates the verified hashes in ../MODULE.bazel.lock. CI runs it with
-# --check, which fails if the committed hashes are not the ones the lock
-# command produces -- so an admitted hash is one a signature was checked
-# against, not one that was pasted in.
-tf_providers_lock(
-    name = "providers_lock",
-)

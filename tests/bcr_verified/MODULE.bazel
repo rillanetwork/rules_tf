@@ -11,16 +11,14 @@ local_path_override(
 
 tf = use_extension("@rules_tf//tf:extensions.bzl", "tf_repositories")
 
-# Verified hashes with no lock file anywhere: every zh: hash this mirror is
-# checked against comes from the `verified/` facts in the committed
-# MODULE.bazel.lock, which //tf:providers_lock put there by running `terraform
-# providers lock`. strict, so the build fails if any entry is uncovered --
-# which is what makes this a real test of the facts rather than of the default
-# warning.
+# Verification with no lock file anywhere: the extension runs `terraform
+# providers lock` itself for every entry, checks each resolved package against
+# the hashes that produced, and records the result in MODULE.bazel.lock. A
+# second evaluation is answered from there, so this suite exercises both the
+# first pass and the remembered one.
 tf.download(
     mirror = [
-        # Two versions of one source, so the manifest needs two runs of the
-        # lock command: a dependency lock holds one version per provider.
+        # Two versions of one source, each locked on its own.
         "hashicorp/random:3.3.2",
         "hashicorp/random:3.1.3",
         "hashicorp/null:3.1.1",
@@ -29,7 +27,6 @@ tf.download(
         # above so the selection stays stable as new versions ship.
         "hashicorp/tls:>= 4.0.0, < 4.0.5",
     ],
-    provider_locks_strict = True,
     tfdoc_version = "0.19.0",
     tflint_version = "0.53.0",
     version = "1.9.5",

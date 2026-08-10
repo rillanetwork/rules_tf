@@ -1,18 +1,31 @@
-load("@rules_tf//tf/toolchains/terraform:toolchain.bzl", "terraform_download")
+load(
+    "@rules_tf//tf/toolchains/terraform:toolchain.bzl",
+    "terraform_download",
+    TERRAFORM_SHA256SUMS_TEMPLATE = "SHA256SUMS_TEMPLATE",
+    TERRAFORM_URL_TEMPLATE = "URL_TEMPLATE",
+)
 load("@rules_tf//tf/toolchains/tflint:toolchain.bzl", "tflint_download")
 load("@rules_tf//tf/toolchains/tfdoc:toolchain.bzl", "tfdoc_download")
-load("@rules_tf//tf/toolchains/tofu:toolchain.bzl", "tofu_download")
+load(
+    "@rules_tf//tf/toolchains/tofu:toolchain.bzl",
+    "tofu_download",
+    TOFU_SHA256SUMS_TEMPLATE = "SHA256SUMS_TEMPLATE",
+    TOFU_URL_TEMPLATE = "URL_TEMPLATE",
+)
 load("@rules_tf//tf:toolchains.bzl", "tf_toolchains")
 load(
     "@rules_tf//tf/toolchains:utils.bzl",
     "DEFAULT_REGISTRY",
+    "MIRROR_PLATFORMS",
+    "fetch_lock_tool",
+    "lock_providers",
     "merge_provider_locks",
     "mirror_manifest",
     "parse_mirror_entries",
     "parse_provider_locks",
-    "provider_locks_from_facts",
     "resolve_providers",
-    "verify_against_provider_locks",
+    "unverified_packages",
+    "verify_provider_hashes",
 )
 load("@rules_tf//tf:versions.bzl", "TFDOC_VERSION")
 load("@rules_tf//tf:versions.bzl", "TFLINT_VERSION")
@@ -46,6 +59,15 @@ def _repo_name(*, module, tool, index, suffix = ""):
 
 def _tf_repositories(ctx):
     host_detected_os, host_detected_arch = detect_host_platform(ctx)
+
+    # Coordinates are resolved for every platform a toolchain runs on, plus the
+    # host when it is something else again.
+    host_platform = "%s_%s" % (host_detected_os, host_detected_arch)
+    platforms = MIRROR_PLATFORMS + [
+        p
+        for p in [host_platform]
+        if p not in MIRROR_PLATFORMS
+    ]
 
     tflint_toolchains = []
     tfdoc_toolchains = []
@@ -117,23 +139,43 @@ def _tf_repositories(ctx):
             facts.update(tag_facts)
 
             # Every package hash is known before a byte is fetched, so the
-            # signature-derived check runs here too. Hashes come from the facts
-            # the tf_providers_lock target recorded, from any lock file passed
-            # in, or from both.
-            fact_locks, lock_facts = provider_locks_from_facts(ctx.facts, packages)
-            facts.update(lock_facts)
+            # signature-derived check runs here, against hashes a publisher
+            # signed. A package whose recorded coordinates already carry the
+            # check is left alone, which is what keeps a second evaluation off
+            # the network.
+            pending = unverified_packages(facts, packages, platforms)
+            if pending:
+                provider_locks = parse_provider_locks([
+                    ctx.read(lock)
+                    for lock in version_tag.provider_locks
+                ])
 
-            provider_locks = merge_provider_locks(fact_locks, parse_provider_locks([
-                ctx.read(lock)
-                for lock in version_tag.provider_locks
-            ]))
+                if version_tag.provider_verification == "auto":
+                    # Fetched only when something is left to verify, and only
+                    # for the host: the tool is here to check signatures, not to
+                    # be built with.
+                    tool = "tofu" if version_tag.use_tofu else "terraform"
+                    provider_locks = merge_provider_locks(provider_locks, lock_providers(
+                        ctx,
+                        fetch_lock_tool(
+                            ctx,
+                            tool,
+                            version_tag.version,
+                            host_detected_os,
+                            host_detected_arch,
+                            TOFU_URL_TEMPLATE if version_tag.use_tofu else TERRAFORM_URL_TEMPLATE,
+                            TOFU_SHA256SUMS_TEMPLATE if version_tag.use_tofu else TERRAFORM_SHA256SUMS_TEMPLATE,
+                        ),
+                        pending,
+                    ))
 
-            # Unconditional: with no hashes recorded, the warning is the point.
-            verify_against_provider_locks(
-                packages,
-                provider_locks,
-                version_tag.provider_locks_strict,
-            )
+                verify_provider_hashes(
+                    facts,
+                    pending,
+                    platforms,
+                    provider_locks,
+                    version_tag.provider_verification != "off",
+                )
 
             repo_mirrors[tf_repo_name] = mirror_manifest(packages)
 
@@ -196,16 +238,20 @@ _version_tag = tag_class(
                   "the registry's SHA256SUMS signature against the keys embedded in the " +
                   "terraform binary, so they are a trust root independent of the registry. " +
                   "A lock file holds one version per provider; pass several to cover a " +
-                  "multi-version mirror. Needed only to reuse a lock file that already " +
-                  "exists: a tf_providers_lock target records the same hashes in " +
-                  "MODULE.bazel.lock, where they need no file of their own.",
+                  "multi-version mirror. Needed only to reuse lock files a repository already " +
+                  "keeps: whatever they do not cover is locked by the extension itself.",
         ),
-        "provider_locks_strict": attr.bool(
-            default = False,
-            doc = "Fail rather than warn when a mirror entry has no signature-verified hash " +
-                  "to check against, from either provider_locks or the facts a " +
-                  "tf_providers_lock target recorded. Requires those hashes to exist before " +
-                  "it is turned on, since the check runs before the mirror is fetched.",
+        "provider_verification": attr.string(
+            default = "auto",
+            values = ["auto", "files", "off"],
+            doc = "Where the hashes each mirrored package is checked against come from. " +
+                  "'auto' runs `providers lock` for any version whose hash is not already " +
+                  "recorded in MODULE.bazel.lock or covered by provider_locks: that needs " +
+                  "network access and any credentials the registry requires, runs once per " +
+                  "version, and is answered from the lockfile thereafter. 'files' uses " +
+                  "provider_locks alone and runs nothing. Both fail on an entry no hash " +
+                  "covers. 'off' admits packages on the registry's word, warning about each, " +
+                  "which is what a registry publishing no signatures leaves available.",
         ),
         "mirror_json": attr.label(
             allow_single_file = True,

@@ -15,6 +15,11 @@ tf.download(
     tflint_version = "0.53.0",
     tfdoc_version = "0.19.0",
     use_tofu = False,
+    # The unverified path: this suite is about resolution -- constraints,
+    # prereleases, collapsing duplicates -- so it admits packages on the
+    # registry's word and warns, which is the behaviour a registry publishing
+    # no signatures leaves. Verification itself is covered by bcr_verified.
+    provider_verification = "off",
     mirror = [
         "hashicorp/random:3.3.2",
         "hashicorp/random:3.6.0",

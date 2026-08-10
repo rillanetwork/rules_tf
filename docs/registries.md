@@ -83,10 +83,10 @@ packages from its own host does receive the token.
 
 ### Credentials when locking hashes
 
-The `tf_providers_lock` target shells out to `terraform providers lock`, so that step authenticates the way
-terraform does rather than the way the extension above does. The overlap covers the usual setups - `TF_TOKEN_<host>`,
+Verifying a package runs `terraform providers lock` as a subprocess, which authenticates the way terraform does
+rather than the way the extension above does. The overlap covers the usual setups - `TF_TOKEN_<host>`,
 `~/.terraform.d/credentials.tfrc.json` and a `credentials` block in `~/.terraformrc` are read by both - but
 terraform additionally accepts a `credentials_helper`, which the extension cannot use. A token that only
 terraform can find will lock hashes for a mirror the extension then cannot fetch.
 
-See [mirror.md](mirror.md#verified-hashes) for what the target does with them.
+See [mirror.md](mirror.md#verified-hashes) for what the hashes are used for.

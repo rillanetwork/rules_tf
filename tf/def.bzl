@@ -3,7 +3,6 @@ load("@rules_pkg//pkg:mappings.bzl", "pkg_files")
 load("@rules_tf//tf/rules:tf-gen-doc.bzl", _tf_gen_doc = "tf_gen_doc" )
 load("@rules_tf//tf/rules:tf-gen-versions.bzl", "tf_gen_versions")
 load("@rules_tf//tf/rules:tf-lint.bzl", "tf_lint_test")
-load("@rules_tf//tf/rules:tf-providers-lock.bzl", _tf_providers_lock = "tf_providers_lock")
 load("@rules_tf//tf/rules:tf-module.bzl", _tf_module = "tf_module", "tf_module_deps", "tf_artifact", "tf_validate_test", _tf_format = "tf_format", "tf_format_test")
 
 srcs_exclude = [
@@ -139,8 +138,6 @@ def tf_format(name, modules, **kwargs):
         visibility = ["//visibility:public"],
         **kwargs
     )
-
-tf_providers_lock = _tf_providers_lock
 
 def tf_gen_doc(name, modules, config = None, **kwargs):
     _tf_gen_doc(

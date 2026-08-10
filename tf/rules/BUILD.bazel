@@ -1,26 +1,4 @@
-load("@rules_python//python:defs.bzl", "py_binary", "py_test")
-
 package(default_applicable_licenses = ["//:license"])
-
-# Driven by the tf_providers_lock rule rather than run directly: it takes the
-# mirror manifest from the resolved toolchain.
-py_binary(
-    name = "providers_lock",
-    srcs = ["providers_lock.py"],
-    visibility = ["//visibility:public"],
-)
-
-# Covers the parts that need no registry: manifest parsing, the split into
-# version sets, and the lockfile merge.
-py_test(
-    name = "providers_lock_test",
-    srcs = [
-        "providers_lock.py",
-        "providers_lock_test.py",
-    ],
-    imports = ["."],
-    main = "providers_lock_test.py",
-)
 
 filegroup(
     name = "standard_package",
@@ -28,7 +6,6 @@ filegroup(
         "BUILD.bazel",
     ] + glob([
         "*.bzl",
-        "*.py",
     ]),
     visibility = [
         "//tf:__pkg__",

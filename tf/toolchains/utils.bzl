@@ -638,27 +638,20 @@ def resolve_fact_key(host, namespace, provider_type, spec):
     )
 
 def package_fact_key(host, namespace, provider_type, version, platform):
-    """Fact key under which one platform's package coordinates are remembered."""
+    """Fact key under which one platform's package coordinates are remembered.
+
+    The value carries `download_url`, `sha256`, and `verified` once that sha256
+    has been matched against a signature-verified hash. A recorded package is
+    therefore its own pin: the mirror fetches against the sha256, and the flag
+    says the sha256 is one a publisher signed rather than one a registry
+    asserted.
+    """
     return "package/{host}/{ns}/{type}/{version}/{platform}".format(
         host = host,
         ns = namespace,
         type = provider_type,
         version = version,
         platform = platform,
-    )
-
-def verified_fact_key(host, namespace, provider_type, version):
-    """Fact key under which a version's signature-verified zh: hashes are remembered.
-
-    Not platform-scoped: a `zh:` hash set covers every platform's package and
-    the lock does not record which hash belongs to which, so the check it
-    supports is set membership either way.
-    """
-    return "verified/{host}/{ns}/{type}/{version}".format(
-        host = host,
-        ns = namespace,
-        type = provider_type,
-        version = version,
     )
 
 # The platforms a tf toolchain can run on, and so the set whose package
@@ -1165,8 +1158,7 @@ def parse_provider_locks(documents):
     the package, and only for the platforms the lock was generated for.
 
     The grammar used here is the narrow subset terraform itself emits, not
-    general HCL. Kept in step with `parse_lock` in tf/rules/providers_lock.py,
-    which reads the same files where terraform runs.
+    general HCL.
 
     Args:
       documents: contents of one or more `.terraform.lock.hcl` files.
@@ -1222,51 +1214,155 @@ def parse_provider_locks(documents):
 
     return locks
 
-def provider_locks_from_facts(facts, packages):
-    """Reads the verified zh: hashes recorded as facts for the packages given.
+def unverified_packages(facts, packages, platforms):
+    """The packages whose recorded coordinates carry no verification yet.
 
-    The hashes are put there by the `tf_providers_lock` target, which runs
-    `terraform providers lock` (or `tofu providers lock`) and merges what it
-    verified into `MODULE.bazel.lock` -- the same file that already holds the
-    resolved coordinates, so the check needs no lock file of its own.
-
-    Re-emitting matters: an extension's facts are replaced wholesale by what it
-    returns, so a key not asked for by name here would be dropped from the
-    lockfile on the next evaluation.
+    Verification covers a version rather than a platform: one `zh:` set holds
+    the hash of every platform's package. A version is pending while any
+    platform's recorded coordinates still lack the flag.
 
     Args:
-      facts: the previously persisted fact table, `module_ctx.facts`.
-      packages: resolved coordinates whose hashes are wanted.
+      facts: the fact table this evaluation will return.
+      packages: resolved coordinates, one per provider version.
+      platforms: the platforms whose coordinates were resolved.
 
     Returns:
-      A (locks, facts) tuple: locks has the shape `parse_provider_locks`
-      produces, so the two sources can be merged; facts is the subset to hand
-      back from the extension.
+      The subset of `packages` still to verify.
+    """
+    pending = []
+    for p in packages:
+        for platform in platforms:
+            meta = facts.get(package_fact_key(
+                p["host"],
+                p["namespace"],
+                p["type"],
+                p["version"],
+                platform,
+            ))
+            if meta and not meta.get("verified"):
+                pending.append(p)
+                break
+
+    return pending
+
+def fetch_lock_tool(ctx, tool, version, os, arch, url_template, sha256sums_template):
+    """Downloads the tf binary the extension verifies with, into its working directory.
+
+    Pinned against the release SHA256SUMS, which makes the archive
+    content-addressed: the toolchain repository fetches the same URL later and
+    finds it in `--repository_cache`.
+
+    Args:
+      ctx: the module extension's `module_ctx`.
+      tool: the tool's name, which names both its archive and its directory.
+      version: the release to fetch.
+      os: the host operating system, in the release's spelling.
+      arch: the host architecture, in the release's spelling.
+      url_template: release archive URL, taking `{version}` and `{file}`.
+      sha256sums_template: the release's SHA256SUMS URL, taking `{version}`.
+
+    Returns:
+      The path of the extracted binary.
+    """
+    file = "{tool}_{version}_{os}_{arch}.zip".format(
+        tool = tool,
+        version = version,
+        os = os,
+        arch = arch,
+    )
+
+    ctx.download(
+        url = [sha256sums_template.format(version = version)],
+        output = "lock/sums",
+    )
+
+    sha256 = get_sha256sum(ctx.read("lock/sums"), file)
+    if not sha256:
+        fail("no sha256 for %s in the %s %s release checksums" % (file, tool, version))
+
+    ctx.download_and_extract(
+        url = url_template.format(version = version, file = file),
+        sha256 = sha256,
+        type = "zip",
+        output = "lock/tool",
+    )
+
+    return ctx.path("lock/tool/" + tool)
+
+# `providers lock` fetches a package per provider, so the ceiling is a download
+# rather than a computation.
+_LOCK_TIMEOUT = 1800
+
+_VERSIONS_TF_JSON = """{
+  "terraform": {
+    "required_providers": {
+      "p": {
+        "source": "%s",
+        "version": "%s"
+      }
+    }
+  }
+}
+"""
+
+def lock_providers(ctx, tool, packages):
+    """Runs `<tool> providers lock` over each package and returns the hashes it verified.
+
+    The lock command verifies the registry's SHA256SUMS signature against the
+    signing keys the tf binary carries, then records the sha256 of every
+    platform's release package as a `zh:` entry. A hash it emits is therefore
+    one a publisher signed, which is a trust root independent of whatever the
+    registry claims when the package is later fetched.
+
+    One run per version, each over a single-provider configuration: a
+    `.terraform.lock.hcl` holds one version per provider, and asking for one at
+    a time lets a mirror stock as many versions of a provider as it likes.
+
+    Args:
+      ctx: the module extension's `module_ctx`.
+      tool: path of the terraform or tofu binary to run.
+      packages: resolved coordinates to verify.
+
+    Returns:
+      Verified hashes, shaped as `parse_provider_locks` produces them.
     """
     locks = {}
-    reemit = {}
-    for p in packages:
-        key = verified_fact_key(p["host"], p["namespace"], p["type"], p["version"])
-        remembered = facts.get(key)
-        if not remembered:
-            continue
+    for index, p in enumerate(packages):
+        address = "%s/%s/%s" % (p["host"], p["namespace"], p["type"])
+        workdir = "lock/%d" % index
 
-        # Checked rather than indexed blindly: these are the one class of fact a
-        # tool outside the extension writes, so a hand-edited or half-written
-        # lockfile should say which entry is wrong.
-        hashes = remembered.get("zh") if type(remembered) == "dict" else None
-        if type(hashes) != "list":
-            fail(("the verified hashes recorded for %s in MODULE.bazel.lock are malformed: " +
-                  "expected {\"zh\": [...]}, got %r. Delete the '%s' fact and re-run the " +
-                  "tf_providers_lock target.") % (key, remembered, key))
+        ctx.report_progress("Verifying %s %s" % (address, p["version"]))
+        ctx.file(
+            workdir + "/versions.tf.json",
+            _VERSIONS_TF_JSON % (address, p["version"]),
+            executable = False,
+        )
 
-        reemit[key] = remembered
-        locks["%s/%s/%s@%s" % (p["host"], p["namespace"], p["type"], p["version"])] = {
-            h: True
-            for h in hashes
-        }
+        # The environment is inherited, so a registry's credentials reach the
+        # tool the way they reach it anywhere else: a CLI configuration file, or
+        # the TF_TOKEN_<host> variables.
+        result = ctx.execute(
+            [tool, "-chdir=%s" % ctx.path(workdir), "providers", "lock"],
+            timeout = _LOCK_TIMEOUT,
+        )
+        if result.return_code != 0:
+            fail(("could not verify %s %s: `providers lock` exited %d. The command checks the " +
+                  "registry's signature, so it needs network access and any credentials the " +
+                  "registry requires. Set provider_verification on the tf.download tag to " +
+                  "mirror a registry that publishes no signatures.\n%s") % (
+                address,
+                p["version"],
+                result.return_code,
+                result.stderr,
+            ))
 
-    return locks, reemit
+        document = ctx.path(workdir + "/.terraform.lock.hcl")
+        if not document.exists:
+            fail("`providers lock` wrote no .terraform.lock.hcl for %s %s" % (address, p["version"]))
+
+        locks = merge_provider_locks(locks, parse_provider_locks([ctx.read(document)]))
+
+    return locks
 
 def merge_provider_locks(a, b):
     """Unions two `parse_provider_locks`-shaped tables.
@@ -1283,47 +1379,72 @@ def merge_provider_locks(a, b):
         merged.setdefault(key, {}).update(hashes)
     return merged
 
-def verify_against_provider_locks(packages, locks, strict):
-    """Checks each package hash against the signature-verified lock hashes.
+def verify_provider_hashes(facts, packages, platforms, locks, required):
+    """Checks every recorded package hash against the verified set, and marks it.
+
+    Each platform's coordinates are checked, not just the host's: one `zh:` set
+    covers them all, so a lockfile written on one machine arrives verified on
+    every other.
+
+    A package survives this only by matching a hash a publisher signed, so the
+    flag left behind is what lets a later evaluation take the recorded sha256 as
+    a pin and reach neither the registry nor the tool.
 
     Args:
-      packages: resolved coordinates, each carrying the sha256 the mirror would
-        be fetched against.
-      locks: verified hashes, as `parse_provider_locks` or
-        `provider_locks_from_facts` produce them.
-      strict: fail rather than warn when an entry has no hash covering it.
+      facts: the fact table this evaluation will return; marked in place.
+      packages: resolved coordinates to check.
+      platforms: the platforms whose coordinates were resolved.
+      locks: verified hashes, as `parse_provider_locks` produces them.
+      required: fail rather than warn when an entry has no hash covering it.
     """
     uncovered = []
-    for t in packages:
-        key = "%s/%s/%s@%s" % (t["host"], t["namespace"], t["type"], t["version"])
+    for p in packages:
+        key = "%s/%s/%s@%s" % (p["host"], p["namespace"], p["type"], p["version"])
         expected = locks.get(key)
-        if expected == None:
+        if not expected:
             uncovered.append(key)
             continue
 
-        actual = t["sha256"]
-        if actual not in expected:
-            fail(("provider %s does not match the dependency lock: sha256 %s is not among the " +
-                  "%d zh: hashes recorded for it. Either the lock is stale, or the registry " +
-                  "served a package that was not the signed one -- do not ignore this without " +
-                  "establishing which.") % (key, actual, len(expected)))
+        for platform in platforms:
+            fact_key = package_fact_key(
+                p["host"],
+                p["namespace"],
+                p["type"],
+                p["version"],
+                platform,
+            )
+            meta = facts.get(fact_key)
+            if not meta:
+                continue
 
-    if len(uncovered) == 0:
+            if meta["sha256"] not in expected:
+                fail(("provider %s (%s) does not match the verified hashes: sha256 %s is not " +
+                      "among the %d recorded for it. Either the hashes are stale, or the " +
+                      "registry served a package that was not the signed one -- do not ignore " +
+                      "this without establishing which.") % (
+                    key,
+                    platform,
+                    meta["sha256"],
+                    len(expected),
+                ))
+
+            verified = dict(meta)
+            verified["verified"] = True
+            facts[fact_key] = verified
+
+    if not uncovered:
         return
 
-    message = ("no verified hashes cover: %s. Those providers were fetched on the registry's " +
-               "word alone, with no signature-derived hash to check against. Run the " +
-               "tf_providers_lock target to record hashes for the whole manifest, or run " +
-               "`terraform providers lock` (`tofu providers lock`, for a tofu toolchain) " +
-               "yourself and add the file to provider_locks.") % (
+    message = ("no verified hashes cover: %s. Those packages are mirrored on the registry's " +
+               "word alone, with no signature-derived hash to check them against. Add a " +
+               ".terraform.lock.hcl covering them to provider_locks, or leave " +
+               "provider_verification at 'auto' so the extension locks them itself.") % (
         ", ".join(uncovered)
     )
-    if strict:
+    if required:
         fail(message)
 
-    # A lock file holds one version per provider, so partial coverage is
-    # expected of a multi-version mirror; enumerate the gap rather than
-    # blocking on it. Set provider_locks_strict to make it fatal.
+    # Left unmarked, so the check is retried rather than silently settled.
     print("rules_tf: " + message)  # buildifier: disable=print
 
 def mirror_manifest(parsed_entries):

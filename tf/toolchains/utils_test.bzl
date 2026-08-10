@@ -12,13 +12,14 @@ load(
     "hcl_credentials_token",
     "merge_provider_locks",
     "mirror_manifest",
+    "package_fact_key",
     "parse_mirror_entries",
     "parse_provider_locks",
     "parse_version_constraint",
-    "provider_locks_from_facts",
     "provider_source_parts",
     "select_matching_version",
-    "verified_fact_key",
+    "unverified_packages",
+    "verify_provider_hashes",
 )
 
 _AVAILABLE = ["3.1.0", "3.1.9", "3.2.0", "3.9.0", "4.0.0", "4.0.4", "4.0.5"]
@@ -203,39 +204,52 @@ def _hcl_credentials_test_impl(ctx):
 def _facts_and_merge_test_impl(ctx):
     env = unittest.begin(ctx)
 
-    # The key the tf_providers_lock target writes. Pinned here because that
-    # target builds the same string in Python: the two must not drift.
-    asserts.equals(
-        env,
-        "verified/registry.terraform.io/hashicorp/null/3.1.1",
-        verified_fact_key("registry.terraform.io", "hashicorp", "null", "3.1.1"),
-    )
+    platforms = ["linux_amd64", "darwin_arm64"]
+    null = {"host": "registry.terraform.io", "namespace": "hashicorp", "type": "null", "version": "3.1.1"}
+    random = {"host": "registry.terraform.io", "namespace": "hashicorp", "type": "random", "version": "3.1.3"}
 
-    packages = [
-        {"host": "registry.terraform.io", "namespace": "hashicorp", "type": "null", "version": "3.1.1"},
-        {"host": "registry.terraform.io", "namespace": "hashicorp", "type": "random", "version": "3.1.3"},
-    ]
+    def key(p, platform):
+        return package_fact_key(p["host"], p["namespace"], p["type"], p["version"], platform)
+
     facts = {
-        "verified/registry.terraform.io/hashicorp/null/3.1.1": {"zh": ["aaaa"]},
-        # Left over from a manifest that no longer holds this version: neither
-        # returned as a lock nor re-emitted, which is what prunes it.
-        "verified/registry.terraform.io/hashicorp/tls/4.0.4": {"zh": ["dddd"]},
+        key(null, "linux_amd64"): {"download_url": "https://example/null-linux", "sha256": "aaaa"},
+        key(null, "darwin_arm64"): {"download_url": "https://example/null-darwin", "sha256": "bbbb"},
+        # Already checked on an earlier evaluation, so nothing is pending for it
+        # and no lock command has to run.
+        key(random, "linux_amd64"): {
+            "download_url": "https://example/random-linux",
+            "sha256": "cccc",
+            "verified": True,
+        },
     }
 
-    locks, reemit = provider_locks_from_facts(facts, packages)
-    asserts.equals(env, {"registry.terraform.io/hashicorp/null@3.1.1": {"aaaa": True}}, locks)
-    asserts.equals(env, ["verified/registry.terraform.io/hashicorp/null/3.1.1"], sorted(reemit.keys()))
+    asserts.equals(env, [null], unverified_packages(facts, [null, random], platforms))
 
-    # Hashes from facts and from lock files are unioned, and neither input is
-    # mutated in the process.
-    from_files = {
-        "registry.terraform.io/hashicorp/null@3.1.1": {"bbbb": True},
-        "registry.terraform.io/hashicorp/random@3.1.3": {"cccc": True},
+    # One zh: set covers every platform, so a single lock verifies both of
+    # null's recorded packages.
+    verify_provider_hashes(
+        facts,
+        [null],
+        platforms,
+        {"registry.terraform.io/hashicorp/null@3.1.1": {"aaaa": True, "bbbb": True, "eeee": True}},
+        True,
+    )
+    asserts.true(env, facts[key(null, "linux_amd64")]["verified"])
+    asserts.true(env, facts[key(null, "darwin_arm64")]["verified"])
+    asserts.equals(env, "aaaa", facts[key(null, "linux_amd64")]["sha256"])
+    asserts.equals(env, [], unverified_packages(facts, [null, random], platforms))
+
+    # Hashes from several lock files are unioned, and neither input is mutated
+    # in the process.
+    from_lock = {"registry.terraform.io/hashicorp/null@3.1.1": {"dddd": True}}
+    from_other_lock = {
+        "registry.terraform.io/hashicorp/null@3.1.1": {"eeee": True},
+        "registry.terraform.io/hashicorp/random@3.1.3": {"ffff": True},
     }
-    merged = merge_provider_locks(locks, from_files)
-    asserts.equals(env, ["aaaa", "bbbb"], sorted(merged["registry.terraform.io/hashicorp/null@3.1.1"].keys()))
-    asserts.equals(env, ["cccc"], sorted(merged["registry.terraform.io/hashicorp/random@3.1.3"].keys()))
-    asserts.equals(env, {"registry.terraform.io/hashicorp/null@3.1.1": {"aaaa": True}}, locks)
+    merged = merge_provider_locks(from_lock, from_other_lock)
+    asserts.equals(env, ["dddd", "eeee"], sorted(merged["registry.terraform.io/hashicorp/null@3.1.1"].keys()))
+    asserts.equals(env, ["ffff"], sorted(merged["registry.terraform.io/hashicorp/random@3.1.3"].keys()))
+    asserts.equals(env, {"registry.terraform.io/hashicorp/null@3.1.1": {"dddd": True}}, from_lock)
 
     return unittest.end(env)
 

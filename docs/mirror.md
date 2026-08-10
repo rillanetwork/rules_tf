@@ -98,8 +98,8 @@ registry, which is why it declares `reproducible = True`: a second evaluation de
 repositories with no network access at all. Since packages are content-addressed by sha256, a warm
 `--repository_cache` then serves the whole mirror offline.
 
-A `verified/` fact answers "which hashes for this version survived a signature check", and is written by the
-`tf_providers_lock` target rather than by resolution - see [verified hashes](#verified-hashes) below.
+A `package/` fact also carries `verified`, which answers "was this sha256 matched against a hash a publisher
+signed" - see [verified hashes](#verified-hashes) below.
 
 The toolchain repository also writes `mirror_versions.json`, the resolved `source@version` list, which is what
 it publishes as `TfInfo.mirror_versions` for rules to consume.
@@ -164,60 +164,46 @@ Partner Signing)"), a trust root that does not depend on the registry's answer. 
 `hashicorp/*` and partner providers, where an attacker who could forge TLS to the registry, or compromise it,
 could otherwise substitute a package unnoticed.
 
-Starlark cannot verify a GPG signature, so that check cannot be reproduced here. It can, however, be *imported*.
-`terraform providers lock` performs the full signature verification and writes the resulting package hashes into
-`.terraform.lock.hcl` as `zh:` entries - and a `zh:` value is exactly the sha256 of a release zip. Check every
-package against those hashes and the hash it is admitted on traces back to a signature, not to the registry's
-word.
+Starlark cannot verify a GPG signature, so the extension imports the check instead. `terraform providers lock`
+performs the full signature verification and writes the resulting package hashes into `.terraform.lock.hcl` as
+`zh:` entries - and a `zh:` value is exactly the sha256 of a release zip. Check every package against those
+hashes and the hash it is admitted on traces back to a signature, not to the registry's word.
 
-There are two ways to supply them.
+### How it runs
 
-### Recorded in the lockfile (recommended)
-
-`tf_providers_lock` runs the lock command over the resolved manifest and merges what it verified into the same
-`MODULE.bazel.lock` that already holds the coordinates, as `verified/` facts. There is then no second file to
-keep in step with the manifest:
-
-```python
-load("@rules_tf//tf:def.bzl", "tf_providers_lock")
-
-tf_providers_lock(name = "providers_lock")
-```
-
-```sh
-bazel run //:providers_lock       # re-run whenever the manifest changes, and commit the diff
-bazel run //:providers_lock -- --check   # CI gate: fails if the recorded hashes are not current
-```
-
-The target takes the manifest from the resolved toolchain, so a constraint is locked against the version the
-extension actually selected. It needs network access, and the registry credentials described in
-[registries.md](registries.md); it runs the lock command once per version set, since a dependency lock holds one
-version per provider. Under a tofu toolchain it runs `tofu providers lock` against `registry.opentofu.org`, which
-is not interchangeable with the terraform one - see below.
-
-Set `provider_locks_strict = True` to require that every mirror entry is covered:
+The extension does this itself, as it resolves. A version whose recorded coordinates are not yet marked verified
+sends the extension to fetch the tf binary for the host, run `providers lock` over that one version, and check
+every platform's resolved sha256 against the `zh:` set that produces. The mark goes into the same `package/`
+facts that hold the coordinates, so the next evaluation reads a pin that is already signature-backed and reaches
+neither the registry nor the tool:
 
 ```python
 tf.download(
     version = "1.9.5",
     mirror = ["hashicorp/random:3.3.2"],
-    provider_locks_strict = True,
 )
 ```
 
-Two consequences of the hashes living in the lockfile are worth knowing:
+Nothing else is needed - `provider_verification` defaults to `"auto"`, which is that behaviour. The lock runs
+once per version, needs network access and the registry credentials described in
+[registries.md](registries.md), and is then answered from `MODULE.bazel.lock` until the manifest changes. Under a
+tofu toolchain it runs `tofu providers lock` against `registry.opentofu.org`.
 
-- **A newly resolved package is verified as it is resolved**, which is the case that matters, but *editing* the
-  recorded hashes does not by itself re-trigger the check: facts are not an input Bazel invalidates the
-  extension on. A cold resolution - a fresh checkout, or CI - always verifies.
-- **Bootstrapping is ordered.** With `provider_locks_strict = True` and no hashes recorded yet, the extension
-  fails before the target can run. Record the hashes first, then turn on strict. The same applies to recovering
-  from a genuine mismatch: delete the offending `verified/` fact, re-run the target, and compare what it writes.
+Two consequences follow from where the result is kept:
+
+- **Editing a recorded hash does not re-trigger the check**: facts are not an input Bazel invalidates the
+  extension on. A cold resolution - a fresh checkout, or CI - always verifies what it resolves.
+- **Recovering from a mismatch means discarding the record.** Delete the offending `package/` facts, resolve
+  again, and compare what the extension writes back.
+
+Editing the manifest therefore needs the registry reachable, which is what makes the lockfile diff the reviewable
+artefact: a mirror entry and the signed hash admitting it land in the same commit.
 
 ### From a lock file you already have
 
-`provider_locks` reads `zh:` hashes out of `.terraform.lock.hcl` files directly, which suits a repository that
-already generates one for its own terraform workflow:
+`provider_locks` reads `zh:` hashes out of `.terraform.lock.hcl` files, which suits a repository that already
+generates one for its own terraform workflow. Set `provider_verification = "files"` to check against those alone,
+and run no lock command:
 
 ```sh
 terraform providers lock
@@ -228,24 +214,25 @@ tf.download(
     version = "1.9.5",
     mirror = ["hashicorp/random:3.3.2"],
     provider_locks = ["//terraform:providers.lock.hcl"],
-    provider_locks_strict = True,
+    provider_verification = "files",
 )
 ```
 
 A lock file records one version per provider, while a mirror may stock several, so `provider_locks` takes a
-list - one file per version set. Hashes from files and from facts are merged, so the two can be combined.
+list - one file per version. Under `"auto"` the files are consulted first and only what they leave uncovered is
+locked, so the two can be combined.
 
 ### What the check establishes
 
-Generate hashes with the same tool the toolchain uses: `tofu providers lock` under `use_tofu = True`,
+Lock files must come from the same tool the toolchain uses: `tofu providers lock` under `use_tofu = True`,
 `terraform providers lock` otherwise. The two are not interchangeable. `registry.opentofu.org` serves packages
 that OpenTofu has repackaged and re-signed under its own key, so for a given provider version the `zh:` hashes
 recorded against `registry.opentofu.org/...` are disjoint from those recorded against `registry.terraform.io/...`
-- a lock generated by the other tool covers nothing the mirror fetched, and under
-`provider_locks_strict = True` that is an error rather than a silent pass.
+- a lock generated by the other tool covers nothing the mirror fetched, which is an error rather than a silent
+pass.
 
-Entries with no verified hash are reported: a warning by default, since partial coverage is expected of a mirror
-locked by hand, or an error under `provider_locks_strict = True`.
+An entry no hash covers fails the build. `provider_verification = "off"` turns that into a warning and admits the
+package on the registry's word, which is what a registry publishing no signatures leaves available.
 
 `zh:` hashes cover every platform's package, and the lock does not say which hash belongs to which platform - a
 single signed `SHA256SUMS` document is where they all come from, which is also why one run of the lock command
