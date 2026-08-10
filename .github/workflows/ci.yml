@@ -23,13 +23,10 @@ jobs:
           disk-cache: true
           repository-cache: true
 
-      # //tf/toolchains/git requires a registered git toolchain that the root
-      # module does not provide, so //... does not analyze at the root; scope
-      # to the packages with tests and buildable tooling instead.
+      # Root module only: the tests/ workspaces have their own MODULE.bazel and
+      # are excluded via .bazelignore, so they get dedicated steps in `tests`.
       - name: Test
-        run: |
-          bazel test //tools/... //tf/toolchains:utils_test
-          bazel build //tf_apply/... //lint:buildifier.check
+        run: bazel test //...
 
   tests:
     strategy:
