@@ -24,6 +24,7 @@ load(
     "parse_mirror_entries",
     "parse_provider_locks",
     "resolve_providers",
+    "resolve_tool_sha256",
     "unverified_packages",
     "verify_provider_hashes",
 )
@@ -138,13 +139,35 @@ def _tf_repositories(ctx):
             )
             facts.update(tag_facts)
 
+            # Resolved here rather than in the download repository so that every
+            # byte that repository fetches is pinned by an attribute, which is
+            # what lets it be served from the repo contents cache. The same
+            # hash pins the binary the verification below runs.
+            tool = "tofu" if version_tag.use_tofu else "terraform"
+            tool_sha256, tool_facts, tool_error = resolve_tool_sha256(
+                ctx,
+                tool,
+                version_tag.version,
+                host_detected_os,
+                host_detected_arch,
+                ctx.facts,
+                TOFU_SHA256SUMS_TEMPLATE if version_tag.use_tofu else TERRAFORM_SHA256SUMS_TEMPLATE,
+            )
+            facts.update(tool_facts)
+            if tool_error:
+                resolve_errors.append(tool_error)
+
             # Every package hash is known before a byte is fetched, so the
             # signature-derived check runs here, against hashes a publisher
             # signed. A package whose recorded coordinates already carry the
             # check is left alone, which is what keeps a second evaluation off
             # the network.
+            # A tool release that could not be resolved has recorded its error
+            # already, and the mirror cannot be built without it, so locking is
+            # left to an evaluation that can reach the release rather than
+            # failing here.
             pending = unverified_packages(facts, packages, platforms)
-            if pending:
+            if pending and (tool_sha256 or version_tag.provider_verification != "auto"):
                 provider_locks = parse_provider_locks([
                     ctx.read(lock)
                     for lock in version_tag.provider_locks
@@ -154,7 +177,6 @@ def _tf_repositories(ctx):
                     # Fetched only when something is left to verify, and only
                     # for the host: the tool is here to check signatures, not to
                     # be built with.
-                    tool = "tofu" if version_tag.use_tofu else "terraform"
                     provider_locks = merge_provider_locks(provider_locks, lock_providers(
                         ctx,
                         fetch_lock_tool(
@@ -164,7 +186,7 @@ def _tf_repositories(ctx):
                             host_detected_os,
                             host_detected_arch,
                             TOFU_URL_TEMPLATE if version_tag.use_tofu else TERRAFORM_URL_TEMPLATE,
-                            TOFU_SHA256SUMS_TEMPLATE if version_tag.use_tofu else TERRAFORM_SHA256SUMS_TEMPLATE,
+                            tool_sha256,
                         ),
                         pending,
                     ))
@@ -185,6 +207,7 @@ def _tf_repositories(ctx):
                 version = version_tag.version,
                 os = host_detected_os,
                 arch = host_detected_arch,
+                tool_sha256 = tool_sha256,
                 providers_json = json.encode(packages),
                 resolve_errors = json.encode(resolve_errors),
             )

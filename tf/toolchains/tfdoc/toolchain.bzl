@@ -82,7 +82,10 @@ def _tfdoc_download_impl(ctx):
     if not res.success:
         fail("!failed to dl: ", url)
 
-    return
+    # reproducible: the version attribute names an immutable release, and the
+    # archive is fetched against the sha256 that release publishes, so the repo
+    # contents cache can serve this directory to a cold output base.
+    return ctx.repo_metadata(reproducible = True)
 
 tfdoc_download = repository_rule(
     _tfdoc_download_impl,

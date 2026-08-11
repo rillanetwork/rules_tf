@@ -5,18 +5,18 @@ load(
     "tf_download_impl",
 )
 
-# Also read by the module extension, which fetches the same binary to verify
-# provider hashes with.
+# Also read by the module extension, which resolves the release's sha256 from
+# the checksums document and fetches the same binary to verify provider hashes
+# with.
 URL_TEMPLATE = "https://releases.hashicorp.com/terraform/{version}/{file}"
 SHA256SUMS_TEMPLATE = "https://releases.hashicorp.com/terraform/{version}/terraform_{version}_SHA256SUMS"
 
 def _download_impl(ctx):
-    tf_download_impl(
+    return tf_download_impl(
         ctx,
         tool = "terraform",
         build_tpl = Label("@rules_tf//tf/toolchains/terraform:BUILD.toolchain.tpl"),
         url_template = URL_TEMPLATE,
-        sha256sums_template = SHA256SUMS_TEMPLATE,
     )
 
 terraform_download = repository_rule(

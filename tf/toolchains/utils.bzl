@@ -654,6 +654,14 @@ def package_fact_key(host, namespace, provider_type, version, platform):
         platform = platform,
     )
 
+def tool_fact_key(tool, version, platform):
+    """Fact key under which one platform's tool release sha256 is remembered."""
+    return "tool/{tool}/{version}/{platform}".format(
+        tool = tool,
+        version = version,
+        platform = platform,
+    )
+
 # The platforms a tf toolchain can run on, and so the set whose package
 # coordinates every resolution records -- one lockfile then serves every machine
 # in a team, whichever wrote it. Enumerated rather than discovered because
@@ -665,6 +673,71 @@ MIRROR_PLATFORMS = [
     "darwin_amd64",
     "darwin_arm64",
 ]
+
+def resolve_tool_sha256(ctx, tool, version, os, arch, facts, sha256sums_template):
+    """Resolves the tool release's sha256, so the download repo is given it rather than fetching it.
+
+    Every byte that repository fetches is then pinned by an attribute, which is
+    what lets it declare itself reproducible and be served from the repo
+    contents cache.
+
+    Resolved for every platform in `MIRROR_PLATFORMS`, for the reason the
+    package coordinates are: one lockfile then covers every machine in a team.
+
+    Args:
+      ctx: the module extension's `module_ctx`.
+      tool: the tool's name, which names both its archive and its facts.
+      version: the release to resolve.
+      os: the host operating system, in the release's spelling.
+      arch: the host architecture, in the release's spelling.
+      facts: the previously persisted fact table, `module_ctx.facts`.
+      sha256sums_template: the release's SHA256SUMS URL, taking `{version}`.
+
+    Returns:
+      A (sha256, facts, error) tuple: sha256 is the host's, facts is the table
+      to hand back, and error is None or a message for the caller to defer.
+    """
+    platform = "%s_%s" % (os, arch)
+
+    wanted = list(MIRROR_PLATFORMS)
+    if platform not in wanted:
+        wanted.append(platform)
+
+    # A hit on the host's key answers the question the download repo asks; the
+    # other platforms' keys are re-emitted so they survive, since an extension's
+    # facts are replaced wholesale by what it returns.
+    remembered = facts.get(tool_fact_key(tool, version, platform))
+    if remembered:
+        kept = {}
+        for p in wanted:
+            r = facts.get(tool_fact_key(tool, version, p))
+            if r:
+                kept[tool_fact_key(tool, version, p)] = r
+        return remembered["sha256"], kept, None
+
+    url = sha256sums_template.format(version = version)
+    output = "%s_%s_sha256sums" % (tool, version)
+    if not ctx.download(url = [url], output = output, allow_fail = True).success:
+        return "", {}, "failed to fetch the %s %s SHA256SUMS from %s" % (tool, version, url)
+
+    shasums = ctx.read(output)
+    new_facts = {}
+    for p in wanted:
+        p_os, _, p_arch = p.partition("_")
+        sha256 = get_sha256sum(shasums, "{tool}_{version}_{os}_{arch}.zip".format(
+            tool = tool,
+            version = version,
+            os = p_os,
+            arch = p_arch,
+        ))
+        if sha256:
+            new_facts[tool_fact_key(tool, version, p)] = {"sha256": sha256}
+
+    host = new_facts.get(tool_fact_key(tool, version, platform))
+    if not host:
+        return "", new_facts, "no sha256 for %s_%s_%s.zip in %s" % (tool, version, platform, url)
+
+    return host["sha256"], new_facts, None
 
 def resolve_providers(ctx, entries, default_host, os, arch, facts):
     """Resolves every mirror entry to a concrete version, package URL and sha256.
@@ -1012,6 +1085,13 @@ TF_DOWNLOAD_ATTRS = {
     "version": attr.string(mandatory = True),
     "os": attr.string(mandatory = True),
     "arch": attr.string(mandatory = True),
+    "tool_sha256": attr.string(
+        mandatory = True,
+        doc = "sha256 of the tool's release archive for this platform, resolved by the " +
+              "module extension from the release's SHA256SUMS. Passed in rather than " +
+              "fetched so that every download this repository makes is pinned by an " +
+              "attribute.",
+    ),
     "providers_json": attr.string(
         mandatory = True,
         doc = "JSON list of the providers to mirror, each already resolved by the " +
@@ -1027,7 +1107,7 @@ TF_DOWNLOAD_ATTRS = {
     ),
 }
 
-def tf_download_impl(ctx, tool, build_tpl, url_template, sha256sums_template):
+def tf_download_impl(ctx, tool, build_tpl, url_template):
     """Shared implementation of the terraform and tofu download repository rules.
 
     The two differ only in what they are called and where their releases live.
@@ -1037,7 +1117,9 @@ def tf_download_impl(ctx, tool, build_tpl, url_template, sha256sums_template):
       tool: the tool's name, which names both its archive and its output directory.
       build_tpl: Label of the toolchain BUILD template to instantiate.
       url_template: release archive URL, taking `{version}` and `{file}`.
-      sha256sums_template: the release's SHA256SUMS URL, taking `{version}`.
+
+    Returns:
+      A `repo_metadata` marking the repository reproducible.
     """
     resolve_errors = json.decode(ctx.attr.resolve_errors)
     if len(resolve_errors) > 0:
@@ -1064,19 +1146,9 @@ def tf_download_impl(ctx, tool, build_tpl, url_template, sha256sums_template):
     )
     url = url_template.format(version = ctx.attr.version, file = file)
 
-    ctx.download(
-        url = [sha256sums_template.format(version = ctx.attr.version)],
-        output = "sha256sums",
-    )
-
-    data = ctx.read("sha256sums")
-    sha256sum = get_sha256sum(data, file)
-    if sha256sum == None or sha256sum == "":
-        fail("Could not find sha256sum for file {}".format(file))
-
     res = ctx.download_and_extract(
         url = url,
-        sha256 = sha256sum,
+        sha256 = ctx.attr.tool_sha256,
         type = "zip",
         output = tool,
     )
@@ -1101,6 +1173,15 @@ def tf_download_impl(ctx, tool, build_tpl, url_template, sha256sums_template):
         "mirror_versions.json",
         content = json.encode(mirror_manifest(packages)),
     )
+
+    # reproducible: the contents are a function of the attributes alone. Every
+    # provider package is fetched against a sha256 the extension resolved and
+    # passed in, and the tool's own archive against the sha256 its release
+    # publishes. That makes the whole ~750MB directory eligible for the repo
+    # contents cache, so a cold output base links it rather than downloading
+    # and extracting it again -- which the repository cache alone cannot do,
+    # since it holds the archives rather than the unpacked mirror.
+    return ctx.repo_metadata(reproducible = True)
 
 _DECLARE_TOOLCHAIN_CHUNK = """
 tf_toolchain(
@@ -1245,12 +1326,12 @@ def unverified_packages(facts, packages, platforms):
 
     return pending
 
-def fetch_lock_tool(ctx, tool, version, os, arch, url_template, sha256sums_template):
+def fetch_lock_tool(ctx, tool, version, os, arch, url_template, sha256):
     """Downloads the tf binary the extension verifies with, into its working directory.
 
-    Pinned against the release SHA256SUMS, which makes the archive
-    content-addressed: the toolchain repository fetches the same URL later and
-    finds it in `--repository_cache`.
+    The archive is content-addressed by the sha256 already resolved for it, so
+    the toolchain repository fetches the same URL later and finds it in
+    `--repository_cache`.
 
     Args:
       ctx: the module extension's `module_ctx`.
@@ -1259,7 +1340,7 @@ def fetch_lock_tool(ctx, tool, version, os, arch, url_template, sha256sums_templ
       os: the host operating system, in the release's spelling.
       arch: the host architecture, in the release's spelling.
       url_template: release archive URL, taking `{version}` and `{file}`.
-      sha256sums_template: the release's SHA256SUMS URL, taking `{version}`.
+      sha256: the release archive's sha256, from `resolve_tool_sha256`.
 
     Returns:
       The path of the extracted binary.
@@ -1270,15 +1351,6 @@ def fetch_lock_tool(ctx, tool, version, os, arch, url_template, sha256sums_templ
         os = os,
         arch = arch,
     )
-
-    ctx.download(
-        url = [sha256sums_template.format(version = version)],
-        output = "lock/sums",
-    )
-
-    sha256 = get_sha256sum(ctx.read("lock/sums"), file)
-    if not sha256:
-        fail("no sha256 for %s in the %s %s release checksums" % (file, tool, version))
 
     ctx.download_and_extract(
         url = url_template.format(version = version, file = file),
