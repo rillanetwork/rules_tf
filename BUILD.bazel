@@ -35,8 +35,9 @@ package_metadata_license(
 )
 
 # What the child modules under tests/ need to resolve this module through their
-# local_path_override, so a new package here needs adding below. Listed rather
-# than globbed, which would follow the bazel-* symlinks into the output base.
+# local_path_override, so a new package here needs an all_files filegroup of its
+# own and an entry below. Listed rather than globbed: a glob would not reach into
+# the subpackages, and would follow the bazel-* symlinks into the output base.
 filegroup(
     name = "local_repository_files",
     testonly = True,

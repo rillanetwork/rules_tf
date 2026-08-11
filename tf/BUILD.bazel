@@ -29,7 +29,6 @@ bzl_library(
     visibility = ["//visibility:public"],
 )
 
-# Staged into the child modules under tests/, which need sources, not targets.
 filegroup(
     name = "all_files",
     testonly = True,

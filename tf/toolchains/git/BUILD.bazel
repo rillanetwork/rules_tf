@@ -74,7 +74,6 @@ toolchain(
     toolchain_type = ":git_toolchain_type",
 )
 
-# Staged into the child modules under tests/, which need sources, not targets.
 filegroup(
     name = "all_files",
     testonly = True,
