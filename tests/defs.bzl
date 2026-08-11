@@ -11,6 +11,9 @@ _TAGS = integration_test_utils.DEFAULT_INTEGRATION_TEST_TAGS + [
     "requires-network",
     "no-remote-cache",
     "external",
+    # The nested Bazel writes to the repository cache, which CI puts outside
+    # the sandbox and the darwin sandbox then refuses to let it write to.
+    "no-sandbox",
 ]
 
 def tf_integration_test(name, workspace_path, test_runner, bazel_cmds = None):
