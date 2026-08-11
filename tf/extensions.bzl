@@ -13,21 +13,24 @@ load(
     TOFU_URL_TEMPLATE = "URL_TEMPLATE",
 )
 load("@rules_tf//tf:toolchains.bzl", "tf_toolchains")
+load("@rules_tf//tf/toolchains:checksums.bzl", "resolve_tool_sha256")
+load("@rules_tf//tf/toolchains:facts.bzl", "MIRROR_PLATFORMS")
 load(
-    "@rules_tf//tf/toolchains:utils.bzl",
-    "DEFAULT_REGISTRY",
-    "MIRROR_PLATFORMS",
+    "@rules_tf//tf/toolchains:provider_locks.bzl",
     "fetch_lock_tool",
     "lock_providers",
     "merge_provider_locks",
-    "mirror_manifest",
-    "parse_mirror_entries",
     "parse_provider_locks",
-    "resolve_providers",
-    "resolve_tool_sha256",
     "unverified_packages",
     "verify_provider_hashes",
 )
+load(
+    "@rules_tf//tf/toolchains:provider_mirror.bzl",
+    "mirror_manifest",
+    "parse_mirror_entries",
+    "resolve_providers",
+)
+load("@rules_tf//tf/toolchains:registry.bzl", "DEFAULT_REGISTRY")
 load("@rules_tf//tf:versions.bzl", "TFDOC_VERSION")
 load("@rules_tf//tf:versions.bzl", "TFLINT_VERSION")
 

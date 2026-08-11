@@ -1,13 +1,23 @@
-load(":utils_test.bzl", "utils_test_suite")
+load(":provider_locks_test.bzl", "provider_locks_test_suite")
+load(":provider_mirror_test.bzl", "provider_mirror_test_suite")
+load(":registry_test.bzl", "registry_test_suite")
+load(":semver_test.bzl", "semver_test_suite")
 
 package(default_applicable_licenses = ["//:license"])
 
-# Covers the parts of utils.bzl that need no registry: the semver comparator and
-# constraint solver, the lock parser, and the facts helpers.
-utils_test_suite()
+# Covers the parts that need no registry: the semver comparator and constraint
+# solver, the manifest grammar, the credentials parser, and the lock parser with
+# the verification pass it feeds.
+semver_test_suite()
 
-# The test itself is not distributed: it is the only .bzl here that a consumer
-# never loads, and it depends on bazel_skylib's unittest.
+provider_mirror_test_suite()
+
+registry_test_suite()
+
+provider_locks_test_suite()
+
+# The tests themselves are not distributed: they are the only .bzl files here
+# that a consumer never loads, and they depend on bazel_skylib's unittest.
 filegroup(
     name = "standard_package",
     srcs = [

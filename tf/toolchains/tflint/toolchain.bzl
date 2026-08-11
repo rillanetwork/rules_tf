@@ -1,4 +1,4 @@
-load("@rules_tf//tf/toolchains:utils.bzl", "get_sha256sum")
+load("@rules_tf//tf/toolchains:checksums.bzl", "get_sha256sum")
 
 TflintInfo = provider(
     doc = "Information about how to invoke tflint.",

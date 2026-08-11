@@ -1,5 +1,5 @@
 load(
-    "@rules_tf//tf/toolchains:utils.bzl",
+    "@rules_tf//tf/toolchains:tf_download.bzl",
     "TF_DOWNLOAD_ATTRS",
     "tf_declare_toolchain_chunk",
     "tf_download_impl",

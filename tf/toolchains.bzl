@@ -1,3 +1,4 @@
+load("@rules_tf//tf/toolchains:registry.bzl", "DEFAULT_REGISTRY")
 load("@rules_tf//tf/toolchains:tf_toolchain.bzl", _tf_toolchain = "tf_toolchain")
 load("@rules_tf//tf/toolchains/terraform:toolchain.bzl", _terraform_declare_toolchain_chunk = "DECLARE_TOOLCHAIN_CHUNK")
 load("@rules_tf//tf/toolchains/tofu:toolchain.bzl", _tofu_declare_toolchain_chunk = "DECLARE_TOOLCHAIN_CHUNK")
@@ -5,7 +6,6 @@ load("@rules_tf//tf/toolchains/tfdoc:toolchain.bzl", _tfdoc_toolchain = "tfdoc_t
 load("@rules_tf//tf/toolchains/tfdoc:toolchain.bzl", _tfdoc_declare_toolchain_chunk = "DECLARE_TOOLCHAIN_CHUNK")
 load("@rules_tf//tf/toolchains/tflint:toolchain.bzl", _tflint_toolchain = "tflint_toolchain")
 load("@rules_tf//tf/toolchains/tflint:toolchain.bzl", _tflint_declare_toolchain_chunk = "DECLARE_TOOLCHAIN_CHUNK")
-load("@rules_tf//tf/toolchains:utils.bzl", "DEFAULT_REGISTRY")
 
 platforms = {
     "linux_amd64": {
