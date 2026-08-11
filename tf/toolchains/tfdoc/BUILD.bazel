@@ -24,3 +24,12 @@ exports_files(
         "//tf:__pkg__",
     ],
 )
+
+# Staged into the child modules under tests/, which resolve this module through
+# a local_path_override and so need its sources on disk rather than its targets.
+filegroup(
+    name = "all_files",
+    testonly = True,
+    srcs = glob(["*"]),
+    visibility = ["//:__subpackages__"],
+)

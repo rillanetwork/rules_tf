@@ -10,8 +10,6 @@ jobs:
   tests:
     strategy:
       matrix:
-        bazel-version:
-          - 9.x
         runner:
           - ubuntu-latest
           - macos-latest
@@ -21,13 +19,6 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Setup
-        run: |
-          echo "USE_BAZEL_VERSION=${BAZEL_VERSION}" > .bazeliskrc
-        env:
-          BAZEL_VERSION: ${{matrix.bazel-version}}
-        working-directory: tests/bcr
-
       - name: Setup Bazel
         uses: bazel-contrib/setup-bazel@0.19.0
         with:
@@ -35,77 +26,16 @@ jobs:
           disk-cache: true
           repository-cache: true
 
-      - name: Test
-        run: bazel query "tests(//...)" | xargs -n1 bazel test
-        working-directory: tests/bcr
+      # Each of these drives a nested Bazel against a child module under
+      # tests/. What every suite covers is documented on its target.
+      - name: Integration tests
+        run: bazel test //tests:integration_tests
 
-      - name: Test run fmt
-        run: bazel query 'kind("tf_format rule", //...)' | xargs -n1 bazel run
-        working-directory: tests/bcr
-
-      - name: Test run gendoc
-        run: bazel query 'kind("tf_gen_doc rule", //...)' | xargs -n1 bazel run
-        working-directory: tests/bcr
-
-      - name: Test run genversions
-        run: |
-          bazel query 'kind(tf_gen_version, //...)' | xargs bazel build
-          bazel cquery 'kind(tf_gen_versions, //...)' --output files | xargs -n1 bash
-
-      - name: Setup mirror_json tests
-        run: |
-          echo "USE_BAZEL_VERSION=${BAZEL_VERSION}" > .bazeliskrc
-        env:
-          BAZEL_VERSION: ${{matrix.bazel-version}}
-        working-directory: tests/bcr_mirror_json
-
-      - name: Test mirror_json
-        run: bazel query "tests(//...)" | xargs -n1 bazel test
-        working-directory: tests/bcr_mirror_json
-
-      # Pins its own Bazel via .bazelversion: the facts committed in its
-      # MODULE.bazel.lock are only honoured by the release that wrote them.
+      # Separate, and after: every registry host in the bcr_facts mirror is
+      # unreachable.invalid, so it resolves only when the packages are already
+      # in the repository cache, which the suite above puts there.
       - name: Test extension facts
-        run: bazel query "tests(//...)" | xargs -n1 bazel test
-        working-directory: tests/bcr_facts
-
-      - name: Setup tofu tests
-        run: |
-          echo "USE_BAZEL_VERSION=${BAZEL_VERSION}" > .bazeliskrc
-        env:
-          BAZEL_VERSION: ${{matrix.bazel-version}}
-        working-directory: tests/bcr_tofu
-
-      - name: Test tofu toolchain
-        run: bazel query "tests(//...)" | xargs -n1 bazel test
-        working-directory: tests/bcr_tofu
-
-      # The expunged output base forces a cold resolution, so it goes through
-      # the facts in the lockfile rather than a cached extension result -- and,
-      # since packages are content-addressed, through the repository cache
-      # rather than the registry. The run above locked one version with `tofu
-      # providers lock` against registry.opentofu.org and took the rest from a
-      # lock file, so this covers both sources of hashes being remembered.
-      - name: Test tofu resolution from facts
-        run: |
-          bazel clean --expunge
-          bazel query "tests(//...)" | xargs -n1 bazel test
-        working-directory: tests/bcr_tofu
-
-      # Verification with no lock file anywhere. The first pass is answered by
-      # the facts committed in MODULE.bazel.lock; discarding those makes the
-      # extension run `terraform providers lock` for every entry against the
-      # live registry, and what it records back has to be what was committed.
-      # Pins its own Bazel via .bazelversion, for the same reason the facts
-      # workspace does.
-      - name: Test verified hashes
-        run: |
-          bazel query "tests(//...)" | xargs -n1 bazel test
-          jq 'del(.facts)' MODULE.bazel.lock > MODULE.bazel.lock.stripped
-          mv MODULE.bazel.lock.stripped MODULE.bazel.lock
-          bazel mod deps > /dev/null
-          git diff --exit-code MODULE.bazel.lock
-        working-directory: tests/bcr_verified
+        run: bazel test //tests:facts_test
 
   release:
     if: ${{ github.event_name != 'pull_request' }}

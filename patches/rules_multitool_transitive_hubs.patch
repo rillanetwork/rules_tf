@@ -1,0 +1,31 @@
+Backport of theoremlp/rules_multitool@cb9b69e, "fix: don't add transitive hubs
+to direct deps" (#115), which is merged upstream but not in any release as of
+1.11.1.
+
+Without it the extension classifies a hub declared by any module in the graph
+as a direct dependency of the root, so a root module that uses multitool as a
+dev dependency -- as this one does, to keep actionlint out of the graph its
+consumers resolve -- collides with the non-dev hub that cgrindel_bazel_starlib
+declares, reaching us through rules_bazel_integration_test:
+
+    Error in extension_metadata: in root_module_direct_dev_deps:
+    entry 'multitool' is also in root_module_direct_deps
+
+Drop this patch, and the single_version_override in MODULE.bazel, once a
+release containing the fix is in the registry.
+
+--- a/multitool/extension.bzl
++++ b/multitool/extension.bzl
+@@ -26,10 +26,8 @@
+             else:
+                 lockfiles[h.hub_name] = [h.lockfile]
+
+-            if not module_ctx.is_dev_dependency(h):
+-                root_module_direct_deps[h.hub_name] = 1
+-            else:
+-                root_module_direct_dev_deps[h.hub_name] = 1
++            if mod.is_root:
++                (root_module_direct_dev_deps if module_ctx.is_dev_dependency(h) else root_module_direct_deps)[h.hub_name] = 1
+
+     # ensure _DEFAULT_HUB_NAME is present in non-dev and dev deps
+     # when non-dev and dev deps are non-empty.

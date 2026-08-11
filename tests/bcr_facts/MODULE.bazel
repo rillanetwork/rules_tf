@@ -10,7 +10,7 @@ local_path_override(
 )
 
 # The facts in MODULE.bazel.lock are only honoured by the Bazel release that
-# wrote them, hence the pinned .bazelversion.
+# wrote them, so bumping //:.bazelversion means regenerating this lock file.
 tf = use_extension("@rules_tf//tf:extensions.bzl", "tf_repositories")
 
 # Every mirror entry names a registry host that does not resolve, and one is a

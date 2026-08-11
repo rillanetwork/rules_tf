@@ -9,5 +9,18 @@ test:ci --test_strategy=standalone
 
 test --test_output=errors
 
+# The child modules under tests/ are staged into the integration tests by
+# glob(), which means this module has to be able to see their files -- so they
+# cannot be hidden with .bazelignore, which would make them invisible. Marking
+# their packages as deleted hides them from target expansion instead, leaving
+# the files themselves globbable from //tests.
+#
+# To update these lines, run
+# `bazel run @rules_bazel_integration_test//tools:update_deleted_packages --
+#  --exclude_dir .bazelbsp`. The exclusion keeps a local BSP workspace, which
+# some IDEs generate in-tree, out of a file everyone shares.
+build --deleted_packages=tests/bcr,tests/bcr/tf,tests/bcr/tf/modules/mod-a,tests/bcr/tf/modules/multi_provider,tests/bcr/tf/root-modules/root-mod-a,tests/bcr/tf/root-modules/root-mod-multi-provider,tests/bcr/tf/root-modules/root-mod-newrand,tests/bcr_facts,tests/bcr_facts/tf/root-modules/root-mod-facts,tests/bcr_mirror_json,tests/bcr_mirror_json/tf,tests/bcr_mirror_json/tf/root-modules/root-mod-mirror-json,tests/bcr_tofu,tests/bcr_tofu/tf,tests/bcr_tofu/tf/root-modules/root-mod-tofu,tests/bcr_verified,tests/bcr_verified/tf/root-modules/root-mod-verified
+query --deleted_packages=tests/bcr,tests/bcr/tf,tests/bcr/tf/modules/mod-a,tests/bcr/tf/modules/multi_provider,tests/bcr/tf/root-modules/root-mod-a,tests/bcr/tf/root-modules/root-mod-multi-provider,tests/bcr/tf/root-modules/root-mod-newrand,tests/bcr_facts,tests/bcr_facts/tf/root-modules/root-mod-facts,tests/bcr_mirror_json,tests/bcr_mirror_json/tf,tests/bcr_mirror_json/tf/root-modules/root-mod-mirror-json,tests/bcr_tofu,tests/bcr_tofu/tf,tests/bcr_tofu/tf/root-modules/root-mod-tofu,tests/bcr_verified,tests/bcr_verified/tf/root-modules/root-mod-verified
+
 # Import a git-ignored .bazelrc.local file, if it exists.
 try-import %workspace%/.bazelrc.local

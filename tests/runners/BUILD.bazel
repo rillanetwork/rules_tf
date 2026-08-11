@@ -1,0 +1,25 @@
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+
+package(default_applicable_licenses = ["//:license"])
+
+# The runners drive a nested Bazel against a child module under tests/. They
+# find the module through BIT_WORKSPACE_DIR and the Bazel binary to use through
+# BIT_BAZEL_BINARY, both set by rules_bazel_integration_test.
+[
+    sh_binary(
+        name = name,
+        testonly = True,
+        srcs = ["{}.sh".format(name)],
+        data = [
+            "lib.sh",
+            "@rules_bazel_integration_test//tools:create_scratch_dir",
+        ],
+        visibility = ["//tests:__pkg__"],
+        deps = ["@bazel_tools//tools/bash/runfiles"],
+    )
+    for name in [
+        "bazel_suite",
+        "bcr_suite",
+        "verified_suite",
+    ]
+]

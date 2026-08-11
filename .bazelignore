@@ -1,5 +1,3 @@
-tests/bcr
-tests/bcr_mirror_json
-tests/bcr_facts
-tests/bcr_tofu
-tests/bcr_verified
+# The child modules under tests/ are hidden with --deleted_packages in
+# .bazelrc rather than listed here: the integration tests glob their files, and
+# .bazelignore would make those files invisible to this module entirely.
