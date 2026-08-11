@@ -3,15 +3,12 @@ load(":defs.bzl", "tf_integration_test")
 
 package(default_applicable_licenses = ["//:license"])
 
-# The rule set: the tests, the generators, and the root module commands.
 tf_integration_test(
     name = "bcr_test",
     test_runner = "//tests/runners:bcr_suite",
     workspace_path = "bcr",
 )
 
-# Provider mirror driven by a checked-in providers.json, with every package
-# hash checked against a dependency lock file.
 tf_integration_test(
     name = "mirror_json_test",
     bazel_cmds = ["test //..."],
@@ -19,10 +16,6 @@ tf_integration_test(
     workspace_path = "bcr_mirror_json",
 )
 
-# The tofu toolchain, against registry.opentofu.org. The second pass runs from
-# an expunged output base, so resolution goes through the facts recorded in the
-# lock file rather than a cached extension result, and through the repository
-# cache rather than the registry.
 tf_integration_test(
     name = "tofu_test",
     bazel_cmds = [
@@ -34,22 +27,15 @@ tf_integration_test(
     workspace_path = "bcr_tofu",
 )
 
-# Verification with no lock file anywhere, and the round trip that proves the
-# committed facts still match what the registry serves.
 tf_integration_test(
     name = "verified_test",
     test_runner = "//tests/runners:verified_suite",
     workspace_path = "bcr_verified",
 )
 
-# Resolution entirely from committed extension facts.
-#
-# Deliberately not a member of the suite below. Every registry host in this
-# module's mirror is unreachable.invalid, so it can only resolve when the
-# packages are already in the repository cache, which the other suites put
-# there. A test_suite gives no ordering guarantee -- `exclusive` serialises the
-# tests but does not sequence them -- so the ordering is CI's job, and this
-# target is run as its own step after the suite.
+# Not a member of the suite below: its mirror can reach no registry, so it only
+# resolves from what the other suites leave in the repository cache, and a
+# test_suite does not order its tests. CI runs it as a step afterwards.
 tf_integration_test(
     name = "facts_test",
     bazel_cmds = ["test //..."],
@@ -59,8 +45,6 @@ tf_integration_test(
 
 test_suite(
     name = "integration_tests",
-    # Without the tags the suite itself would be picked up by `//...`, dragging
-    # in the very tests the tags exist to keep out of it.
     tags = integration_test_utils.DEFAULT_INTEGRATION_TEST_TAGS,
     tests = [
         ":bcr_test",

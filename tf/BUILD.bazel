@@ -29,8 +29,7 @@ bzl_library(
     visibility = ["//visibility:public"],
 )
 
-# Staged into the child modules under tests/, which resolve this module through
-# a local_path_override and so need its sources on disk rather than its targets.
+# Staged into the child modules under tests/, which need sources, not targets.
 filegroup(
     name = "all_files",
     testonly = True,

@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
 
-# Integration test runner that executes a list of Bazel commands against a
-# child module. The commands arrive newline separated in TF_BAZEL_CMDS and run
-# in order, sharing one output base, so a suite can ask for things like a clean
-# between two passes.
+# Runs the newline-separated Bazel commands in TF_BAZEL_CMDS against a child
+# module, in order, sharing one output base.
 
 set -euo pipefail
 

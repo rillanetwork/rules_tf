@@ -1,3 +1,2 @@
 # The child modules under tests/ are hidden with --deleted_packages in
-# .bazelrc rather than listed here: the integration tests glob their files, and
-# .bazelignore would make those files invisible to this module entirely.
+# .bazelrc rather than listed here, which would hide their files too.

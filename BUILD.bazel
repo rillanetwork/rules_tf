@@ -34,13 +34,9 @@ package_metadata_license(
     kind = "@package_metadata//licenses/spdx:Apache-2.0",
 )
 
-# Every file the child modules under tests/ need in order to resolve this
-# module through their local_path_override. The integration tests stage these
-# alongside the child module, so a package this module gains has to be added
-# here as well, or the child will fail to load it.
-#
-# Listed rather than globbed: a glob of this package would also match the
-# bazel-* convenience symlinks, and follow them into the output base.
+# What the child modules under tests/ need to resolve this module through their
+# local_path_override, so a new package here needs adding below. Listed rather
+# than globbed, which would follow the bazel-* symlinks into the output base.
 filegroup(
     name = "local_repository_files",
     testonly = True,

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
-# Integration test runner for the tests/bcr child module, which covers the rule
-# set rather than the toolchain resolution: the tests, then the generators and
-# the root module commands, whose behaviour only shows up when they are run.
+# Integration test runner for the tests/bcr child module: the tests, then the
+# generators and root module commands, which only show their behaviour when
+# they are run.
 
 set -euo pipefail
 
@@ -35,8 +35,8 @@ bit::bazel test //...
 bit::bazel_run_kind "tf_format rule"
 bit::bazel_run_kind "tf_gen_doc rule"
 
-# The generated version scripts are executables that rewrite the versions files
-# in place, so building them proves nothing on its own -- they have to be run.
+# The generated version scripts rewrite the versions files in place, so
+# building them proves nothing -- they have to be run.
 echo "--- tf_gen_versions"
 gen_versions_targets=()
 while IFS=$'\n' read -r target; do gen_versions_targets+=("${target}"); done < <(
@@ -53,8 +53,7 @@ while IFS=$'\n' read -r script; do
   bash "${script}"
 done < <(bit::bazel cquery 'kind("tf_gen_versions rule", //...)' --output files)
 
-# The apply rules shell out to the toolchain against a real root module. plan
-# runs with the state lock disabled because there is no backend to lock.
+# plan runs unlocked because there is no backend to lock.
 echo "--- root module apply rules"
 bit::bazel run //tf/root-modules/root-mod-a:root-mod-a.init
 bit::bazel run //tf/root-modules/root-mod-a:root-mod-a.plan -- -lock=false

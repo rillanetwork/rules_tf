@@ -18,9 +18,7 @@ bazel_dep(name = "rules_multitool", version = "1.11.1", dev_dependency = True)
 bazel_dep(name = "rules_shell", version = "0.8.0", dev_dependency = True)
 bazel_dep(name = "rules_bazel_integration_test", version = "0.37.1", dev_dependency = True)
 
-# Bazel binaries for the //tests integration suites, which run a nested Bazel
-# against the child modules under tests/. dev_dependency keeps the download out
-# of the graph consumers resolve.
+# Bazel binaries for the //tests integration suites.
 bazel_binaries = use_extension(
     "@rules_bazel_integration_test//:extensions.bzl",
     "bazel_binaries",
@@ -29,9 +27,7 @@ bazel_binaries = use_extension(
 bazel_binaries.download(version_file = "//:.bazelversion")
 use_repo(bazel_binaries, "bazel_binaries", "bazel_binaries_bazelisk", "build_bazel_bazel_.bazelversion")
 
-# See the patch header: rules_bazel_integration_test brings in a second module
-# that declares a multitool hub, which 1.11.1 mistakes for a direct dependency
-# of this one. Root-only, so it does not reach consumers.
+# See the patch header. Root-only, so it does not reach consumers.
 single_version_override(
     module_name = "rules_multitool",
     patch_strip = 1,

@@ -1,13 +1,8 @@
 #!/usr/bin/env bash
 
-# Integration test runner for the tests/bcr_verified child module.
-#
-# Two passes over the same module. The first is answered by the extension facts
-# committed in its MODULE.bazel.lock. Discarding those facts and re-resolving
-# makes the extension run `terraform providers lock` for every mirror entry
-# against the live registry, and what it records back has to be exactly what
-# was committed -- otherwise the committed facts assert hashes that the
-# registry no longer agrees with.
+# Integration test runner for the tests/bcr_verified child module: one pass
+# answered by the committed extension facts, then a re-resolve against the live
+# registry that has to reproduce them exactly.
 
 set -euo pipefail
 
@@ -32,8 +27,7 @@ set -e
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-# Keep a handle on the committed lock file before moving off it. The scratch
-# copy is about to be rewritten, and this is what it has to end up matching.
+# The scratch copy is about to be rewritten; this is what it must match.
 committed_lock="${BIT_WORKSPACE_DIR}/MODULE.bazel.lock"
 
 bit::enter_scratch_dir

@@ -23,9 +23,8 @@ jobs:
           disk-cache: true
           repository-cache: true
 
-      # Root module only: the child modules under tests/ have their own
-      # MODULE.bazel, and the integration tests that drive them are tagged
-      # manual, so neither is reached from //... . They run in `tests`.
+      # Root module only: the integration tests are tagged manual and run in
+      # the `tests` job.
       - name: Test
         run: bazel test //...
 
@@ -48,13 +47,10 @@ jobs:
           disk-cache: true
           repository-cache: true
 
-      # Each of these drives a nested Bazel against a child module under
-      # tests/. What every suite covers is documented on its target.
       - name: Integration tests
         run: bazel test //tests:integration_tests
 
-      # Separate, and after: every registry host in the bcr_facts mirror is
-      # unreachable.invalid, so it resolves only when the packages are already
-      # in the repository cache, which the suite above puts there.
+      # After the suite: bcr_facts resolves only from what it leaves in the
+      # repository cache.
       - name: Test extension facts
         run: bazel test //tests:facts_test
