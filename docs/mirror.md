@@ -246,7 +246,11 @@ recorded against `registry.opentofu.org/...` are disjoint from those recorded ag
 pass.
 
 An entry no hash covers fails the build. `provider_verification = "off"` turns that into a warning and admits the
-package on the registry's word, which is what a registry publishing no signatures leaves available.
+package on the registry's word, which is what a registry publishing no signatures leaves available. The mode
+makes no coverage assertion, so unlike `"files"` it treats a verified mark the way `"auto"` does: a package that
+was signature-checked earlier, or that matches a supplied `provider_locks` file now, is admitted silently, and
+the warning names only what was never checked against anything. A mismatch against a hash set that does cover a
+package still fails, even here.
 
 `zh:` hashes cover every platform's package, and the lock does not say which hash belongs to which platform - a
 single signed `SHA256SUMS` document is where they all come from, which is also why one run of the lock command

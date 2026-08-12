@@ -162,17 +162,19 @@ def _tf_repositories(ctx):
 
             # Every package hash is known before a byte is fetched, so the
             # signature-derived check runs here, against hashes a publisher
-            # signed. Only "auto" trusts the verified marks recorded in the
-            # lockfile: they cache its own network-dependent check, and
-            # trusting them is what keeps a second evaluation off the network.
-            # The other modes check every package on every evaluation, so
-            # "files" is a standing assertion that the supplied locks cover
-            # the whole mirror, however past evaluations were configured.
+            # signed. "files" trusts no verified mark recorded in the
+            # lockfile: it checks every package on every evaluation, a
+            # standing assertion that the supplied locks cover the whole
+            # mirror, however past evaluations were configured. The other
+            # modes treat a mark as settled -- it caches a check that already
+            # passed, which keeps a second "auto" evaluation off the network
+            # and keeps "off" from warning about packages that were in fact
+            # signature-checked.
             verification = version_tag.provider_verification
-            if verification == "auto":
-                to_check = unverified_packages(facts, packages, platforms)
-            else:
+            if verification == "files":
                 to_check = packages
+            else:
+                to_check = unverified_packages(facts, packages, platforms)
 
             if to_check:
                 provider_locks = parse_provider_locks([
@@ -288,9 +290,10 @@ _version_tag = tag_class(
                   "lockfile thereafter. 'files' is a standing assertion, re-checked on " +
                   "every evaluation with recorded marks trusted not at all: every mirrored " +
                   "package must match the provider_locks files, and nothing is run. Both " +
-                  "fail on an entry no hash covers. 'off' admits packages on the registry's " +
-                  "word, warning about each, which is what a registry publishing no " +
-                  "signatures leaves available.",
+                  "fail on an entry no hash covers. 'off' admits unverified packages on " +
+                  "the registry's word, warning about each -- what a registry publishing " +
+                  "no signatures leaves available. Packages a recorded mark or a " +
+                  "provider_locks file covers are as verified as under 'auto', silently.",
         ),
         "mirror_json": attr.label(
             allow_single_file = True,
