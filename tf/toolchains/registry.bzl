@@ -60,6 +60,66 @@ def url_host(url):
     """
     return url.split("://", 1)[-1].split("/", 1)[0]
 
+def resolve_url(base, ref):
+    """Resolves a URL reference against the document it was read from.
+
+    The subset of RFC 3986 section 5 a registry response can contain: an
+    absolute URL passes through, a scheme-relative or host-relative reference
+    adopts the base's scheme or authority, and a relative path is merged
+    against the base document's directory, dot-segments removed. `base` is the
+    URL the document was requested from; a redirect is invisible here
+    (`ctx.download` never reports the final URL), so a host that redirects and
+    then answers with relative references resolves against the wrong base --
+    absolute references always work.
+
+    Args:
+      base: absolute URL of the document holding the reference.
+      ref: the reference, absolute or relative.
+
+    Returns:
+      The resolved absolute URL.
+    """
+    if ref.startswith("http://") or ref.startswith("https://"):
+        return ref
+
+    scheme, _, rest = base.partition("://")
+    if ref.startswith("//"):
+        return scheme + ":" + ref
+
+    authority, _, base_path = rest.partition("/")
+    base_path = base_path.partition("?")[0].partition("#")[0]
+
+    # The reference's query and fragment ride along untouched; dot-segment
+    # removal applies to the path alone.
+    suffix = ""
+    for sep in ["?", "#"]:
+        if sep in ref:
+            ref, _, tail = ref.partition(sep)
+            suffix = sep + tail
+            break
+
+    if ref.startswith("/"):
+        merged = ref
+    else:
+        # Resolution is against the document's directory, so its last
+        # component drops off.
+        directory = base_path.rsplit("/", 1)[0] if "/" in base_path else ""
+        merged = "/%s/%s" % (directory, ref) if directory else "/" + ref
+
+    segments = []
+    for segment in merged.split("/"):
+        if segment == ".":
+            continue
+        if segment == "..":
+            # The leading empty segment is the root, which ".." cannot climb
+            # past.
+            if len(segments) > 1:
+                segments.pop()
+            continue
+        segments.append(segment)
+
+    return "%s://%s%s%s" % (scheme, authority, "/".join(segments), suffix)
+
 def _token_env_names(host):
     """Environment variable names that may hold a token for host.
 
@@ -225,13 +285,10 @@ def providers_base_url(client, host):
         bases[host] = ""
         return ""
 
-    # providers.v1 may be an absolute URL or a path relative to the host.
-    if path.startswith("http://") or path.startswith("https://"):
-        base = path
-    elif path.startswith("/"):
-        base = "https://%s%s" % (host, path)
-    else:
-        base = "https://%s/%s" % (host, path)
+    # providers.v1 may be an absolute URL, or a reference relative to the
+    # discovery document itself -- "v1/providers/" resolves under
+    # /.well-known/, the way any document-relative reference would.
+    base = resolve_url(url, path)
 
     if not base.endswith("/"):
         base += "/"

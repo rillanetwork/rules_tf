@@ -29,7 +29,8 @@ entry separates the version.
 For any host other than those two defaults, the provider API endpoint is located by
 [terraform service discovery](https://developer.hashicorp.com/terraform/internals/remote-service-discovery):
 the host must serve `https://<host>/.well-known/terraform.json` containing a `providers.v1` key, whose value is
-either an absolute URL or a path relative to the host.
+either an absolute URL or a reference relative to the discovery document (`/v1/providers/` resolves against the
+host root, `v1/providers/` under `/.well-known/`, as anywhere else on the web).
 
 ```json
 { "providers.v1": "/v1/providers/" }
@@ -37,6 +38,16 @@ either an absolute URL or a path relative to the host.
 
 The two default hosts are resolved from a built-in table, so the common case costs no extra request. Discovery
 results are memoized per host, so a manifest naming many providers on one host discovers it once.
+
+Two registry behaviours are known not to work:
+
+- **A redirected discovery document answering with a relative `providers.v1`.** Bazel's downloader follows the
+  redirect but never reports where it landed, so there is no correct base to resolve the reference against;
+  absolute URLs in a redirected document work fine.
+- **Short-lived signed `download_url`s.** A package's download URL is recorded in `MODULE.bazel.lock` and fetched
+  by coordinates on machines that never saw the registry's answer, so a URL that expires (a signed object-store
+  link, say) fails any resolution cold enough to actually fetch - loudly, at download time. A warm
+  `--repository_cache` masks it, since the content hash is served without touching the URL.
 
 ## Authenticating to a private registry
 

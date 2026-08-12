@@ -19,6 +19,7 @@ load(
     "auth_headers",
     "new_registry_client",
     "providers_base_url",
+    "resolve_url",
     "url_host",
 )
 load(
@@ -421,7 +422,13 @@ def resolve_providers(ctx, entries, default_host, os, arch, facts):
             ))
             continue
 
-        t["metas"][p] = {"download_url": meta["download_url"], "sha256": meta["shasum"]}
+        # Resolved before it is recorded: a fact holding a relative URL would
+        # be useless to the download repository, which never saw the metadata
+        # request it was relative to.
+        t["metas"][p] = {
+            "download_url": resolve_url(r["url"], meta["download_url"]),
+            "sha256": meta["shasum"],
+        }
 
     # Built fresh rather than merged into what was read: `module_ctx.facts` is a
     # lookup, not an iterable, so the previous table cannot be enumerated. The
