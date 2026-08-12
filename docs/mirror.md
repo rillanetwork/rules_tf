@@ -48,9 +48,11 @@ terraform, and means a prerelease can only reach the mirror through an exact pin
 version speaks, and a constraint could in principle skip a version the toolchain's terraform cannot talk to.
 Terraform itself deliberately selects on the constraint alone and fails with an explicit error rather than
 silently choosing an older version (compatibility changes are supposed to arrive as major versions), and the
-mirror matches that. Under `provider_verification = "auto"` the incompatibility surfaces at resolution time,
-because `providers lock` runs under the same terraform release the toolchain uses and performs terraform's own
-protocol check; under the other modes it surfaces when the provider is first exercised.
+mirror matches that. For a version the extension locks itself (`"auto"`, on a fact miss no supplied lock file
+answers), the incompatibility surfaces at resolution time: `providers lock` runs under the same terraform
+release the toolchain uses and performs terraform's own protocol check. On every other path nothing speaks the
+plugin protocol until the provider is first exercised - a lock file generated elsewhere carries no protocol
+information, and neither does the mirror layout `init` reads.
 
 Two entries that resolve to the same version collapse into one, so overlapping constraints are harmless.
 
