@@ -54,26 +54,6 @@ protocol check; under the other modes it surfaces when the provider is first exe
 
 Two entries that resolve to the same version collapse into one, so overlapping constraints are harmless.
 
-## Upgrading from a release that resolved in the repository rule
-
-One step, once, in each consumer. Earlier releases resolved the mirror inside the download repository, so the
-extension was not reproducible and `MODULE.bazel.lock` carried a `moduleExtensions` entry per platform:
-
-```json
-"moduleExtensions": {
-  "@@rules_tf+//tf:extensions.bzl%tf_repositories": {
-    "os:linux,arch:amd64": {"generatedRepoSpecs": {...}},
-    "os:osx,arch:aarch64": {"generatedRepoSpecs": {...}}
-  }
-}
-```
-
-The extension is now reproducible and writes no such entry, so the first build on each platform deletes that
-platform's entry - and a build on one platform cannot delete another's. In a repository whose CI gates on a clean
-working tree, that shows up as a `MODULE.bazel.lock` diff nobody asked for. Delete the whole
-`@@rules_tf+//tf:extensions.bzl%tf_repositories` entry from `moduleExtensions` when you bump, and commit that
-alongside the version change. The `facts` section is where the mirror is recorded from then on.
-
 ## Where the resolved mirror is recorded
 
 Resolution happens in the module extension, not in the download repository, so its results are visible to
