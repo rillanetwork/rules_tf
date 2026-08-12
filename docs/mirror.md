@@ -222,6 +222,12 @@ A lock file records one version per provider, while a mirror may stock several, 
 list - one file per version. Under `"auto"` the files are consulted first and only what they leave uncovered is
 locked, so the two can be combined.
 
+Where `"auto"` treats a verified mark in `MODULE.bazel.lock` as settled, `"files"` trusts no recorded mark:
+every mirrored package is checked against the supplied files on every evaluation, whatever earlier evaluations
+verified or under which mode. The mode is a standing assertion that the committed lock files cover the whole
+mirror. The files are read (and therefore watched) each time, so editing one re-triggers evaluation, and a
+tampered hash in `MODULE.bazel.lock` is caught at the next evaluation rather than only on a cold resolution.
+
 ### What the check establishes
 
 Lock files must come from the same tool the toolchain uses: `tofu providers lock` under `use_tofu = True`,

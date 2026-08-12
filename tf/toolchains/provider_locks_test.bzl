@@ -95,15 +95,25 @@ def _facts_and_merge_test_impl(ctx):
 
     asserts.equals(env, [null], unverified_packages(facts, [null, random], platforms))
 
+    # A recorded mark spares a package only when the caller leaves it out of
+    # the check: passed in regardless, random is reported uncovered even
+    # though an earlier evaluation marked it. This is what makes the "files"
+    # mode a standing assertion rather than a one-shot check.
+    asserts.equals(env, [random], verify_provider_hashes(
+        facts,
+        [random],
+        platforms,
+        {},
+    ))
+
     # One zh: set covers every platform, so a single lock verifies both of
     # null's recorded packages.
-    verify_provider_hashes(
+    asserts.equals(env, [], verify_provider_hashes(
         facts,
         [null],
         platforms,
         {"registry.terraform.io/hashicorp/null@3.1.1": {"aaaa": True, "bbbb": True, "eeee": True}},
-        True,
-    )
+    ))
     asserts.true(env, facts[key(null, "linux_amd64")]["verified"])
     asserts.true(env, facts[key(null, "darwin_arm64")]["verified"])
     asserts.equals(env, "aaaa", facts[key(null, "linux_amd64")]["sha256"])

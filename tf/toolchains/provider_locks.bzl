@@ -250,7 +250,7 @@ def lock_providers(ctx, tool, packages):
 
     return locks
 
-def verify_provider_hashes(facts, packages, platforms, locks, required):
+def verify_provider_hashes(facts, packages, platforms, locks):
     """Checks every recorded package hash against the verified set, and marks it.
 
     Each platform's coordinates are checked, not just the host's: one `zh:` set
@@ -258,22 +258,32 @@ def verify_provider_hashes(facts, packages, platforms, locks, required):
     every other.
 
     A package survives this only by matching a hash a publisher signed, so the
-    flag left behind is what lets a later evaluation take the recorded sha256 as
-    a pin and reach neither the registry nor the tool.
+    flag left behind is what lets a later "auto" evaluation take the recorded
+    sha256 as a pin and reach neither the registry nor the tool. Packages
+    already carrying the flag are checked like any other: whether a recorded
+    mark spares a package this pass is the caller's decision, made by what it
+    puts in `packages`.
+
+    A hash mismatch always fails, in every mode: a package that contradicts a
+    hash set covering it is never fine. A package no hash set covers is merely
+    returned; what that means depends on the verification mode, which is the
+    caller's to enforce (see `enforce_lock_coverage`).
 
     Args:
       facts: the fact table this evaluation will return; marked in place.
       packages: resolved coordinates to check.
       platforms: the platforms whose coordinates were resolved.
       locks: verified hashes, as `parse_provider_locks` produces them.
-      required: fail rather than warn when an entry has no hash covering it.
+
+    Returns:
+      The subset of `packages` no hash set covers.
     """
     uncovered = []
     for p in packages:
         key = "%s/%s/%s@%s" % (p["host"], p["namespace"], p["type"], p["version"])
         expected = locks.get(key)
         if not expected:
-            uncovered.append(key)
+            uncovered.append(p)
             continue
 
         for platform in platforms:
@@ -303,17 +313,39 @@ def verify_provider_hashes(facts, packages, platforms, locks, required):
             verified["verified"] = True
             facts[fact_key] = verified
 
-    if not uncovered:
+    return uncovered
+
+def enforce_lock_coverage(verification, packages):
+    """Fails or warns for packages no verified hash covered, per the mode.
+
+    Args:
+      verification: the tag's provider_verification value.
+      packages: resolved coordinates that remain uncovered after every hash
+        source the mode allows has been consulted.
+    """
+    if not packages:
         return
 
-    message = ("no verified hashes cover: %s. Those packages are mirrored on the registry's " +
-               "word alone, with no signature-derived hash to check them against. Add a " +
-               ".terraform.lock.hcl covering them to provider_locks, or leave " +
-               "provider_verification at 'auto' so the extension locks them itself.") % (
-        ", ".join(uncovered)
-    )
-    if required:
-        fail(message)
+    names = ", ".join([
+        "%s/%s/%s@%s" % (p["host"], p["namespace"], p["type"], p["version"])
+        for p in packages
+    ])
 
-    # Left unmarked, so the check is retried rather than silently settled.
-    print("rules_tf: " + message)  # buildifier: disable=print
+    if verification == "off":
+        # Left unmarked, so the check is retried rather than silently settled.
+        print(("rules_tf: no verified hashes cover: %s. Those packages are mirrored on the " +
+               "registry's word alone, with no signature-derived hash to check them " +
+               "against.") % names)  # buildifier: disable=print
+        return
+
+    if verification == "files":
+        fail(("no verified hashes cover: %s. Under provider_verification = 'files' every " +
+              "mirrored package must match the provider_locks files, on every evaluation. " +
+              "Add a .terraform.lock.hcl covering them, or set provider_verification to " +
+              "'auto' so the extension locks them itself.") % names)
+
+    # "auto", after `providers lock` already ran: the tool exited cleanly but
+    # what it wrote covers none of these.
+    fail(("no verified hashes cover: %s. `providers lock` ran for them but recorded no " +
+          "matching zh: hashes -- the registry may not publish signatures for these " +
+          "providers, which provider_verification = 'off' admits with a warning.") % names)

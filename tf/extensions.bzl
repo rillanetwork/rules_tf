@@ -17,9 +17,9 @@ load("@rules_tf//tf/toolchains:checksums.bzl", "resolve_tool_sha256")
 load("@rules_tf//tf/toolchains:facts.bzl", "MIRROR_PLATFORMS")
 load(
     "@rules_tf//tf/toolchains:provider_locks.bzl",
+    "enforce_lock_coverage",
     "fetch_lock_tool",
     "lock_providers",
-    "merge_provider_locks",
     "parse_provider_locks",
     "unverified_packages",
     "verify_provider_hashes",
@@ -162,45 +162,55 @@ def _tf_repositories(ctx):
 
             # Every package hash is known before a byte is fetched, so the
             # signature-derived check runs here, against hashes a publisher
-            # signed. A package whose recorded coordinates already carry the
-            # check is left alone, which is what keeps a second evaluation off
-            # the network.
-            # A tool release that could not be resolved has recorded its error
-            # already, and the mirror cannot be built without it, so locking is
-            # left to an evaluation that can reach the release rather than
-            # failing here.
-            pending = unverified_packages(facts, packages, platforms)
-            if pending and (tool_sha256 or version_tag.provider_verification != "auto"):
+            # signed. Only "auto" trusts the verified marks recorded in the
+            # lockfile: they cache its own network-dependent check, and
+            # trusting them is what keeps a second evaluation off the network.
+            # The other modes check every package on every evaluation, so
+            # "files" is a standing assertion that the supplied locks cover
+            # the whole mirror, however past evaluations were configured.
+            verification = version_tag.provider_verification
+            if verification == "auto":
+                to_check = unverified_packages(facts, packages, platforms)
+            else:
+                to_check = packages
+
+            if to_check:
                 provider_locks = parse_provider_locks([
                     ctx.read(lock)
                     for lock in version_tag.provider_locks
                 ])
 
-                if version_tag.provider_verification == "auto":
-                    # Fetched only when something is left to verify, and only
-                    # for the host: the tool is here to check signatures, not to
-                    # be built with.
-                    provider_locks = merge_provider_locks(provider_locks, lock_providers(
-                        ctx,
-                        fetch_lock_tool(
-                            ctx,
-                            tool,
-                            version_tag.version,
-                            host_detected_os,
-                            host_detected_arch,
-                            TOFU_URL_TEMPLATE if version_tag.use_tofu else TERRAFORM_URL_TEMPLATE,
-                            tool_sha256,
-                        ),
-                        pending,
-                    ))
+                # The supplied locks are consulted first, so the tool below
+                # runs only for what they leave uncovered.
+                uncovered = verify_provider_hashes(facts, to_check, platforms, provider_locks)
 
-                verify_provider_hashes(
-                    facts,
-                    pending,
-                    platforms,
-                    provider_locks,
-                    version_tag.provider_verification != "off",
-                )
+                if uncovered and verification == "auto":
+                    # A tool release that could not be resolved has recorded
+                    # its error already, and the mirror cannot be built without
+                    # it, so locking is left to an evaluation that can reach
+                    # the release rather than failing here.
+                    if not tool_sha256:
+                        uncovered = []
+                    else:
+                        # Fetched only when something is left to verify, and
+                        # only for the host: the tool is here to check
+                        # signatures, not to be built with.
+                        locked = lock_providers(
+                            ctx,
+                            fetch_lock_tool(
+                                ctx,
+                                tool,
+                                version_tag.version,
+                                host_detected_os,
+                                host_detected_arch,
+                                TOFU_URL_TEMPLATE if version_tag.use_tofu else TERRAFORM_URL_TEMPLATE,
+                                tool_sha256,
+                            ),
+                            uncovered,
+                        )
+                        uncovered = verify_provider_hashes(facts, uncovered, platforms, locked)
+
+                enforce_lock_coverage(verification, uncovered)
 
             repo_mirrors[tf_repo_name] = mirror_manifest(packages)
 
@@ -271,13 +281,16 @@ _version_tag = tag_class(
             default = "auto",
             values = ["auto", "files", "off"],
             doc = "Where the hashes each mirrored package is checked against come from. " +
-                  "'auto' runs `providers lock` for any version whose hash is not already " +
-                  "recorded in MODULE.bazel.lock or covered by provider_locks: that needs " +
-                  "network access and any credentials the registry requires, runs once per " +
-                  "version, and is answered from the lockfile thereafter. 'files' uses " +
-                  "provider_locks alone and runs nothing. Both fail on an entry no hash " +
-                  "covers. 'off' admits packages on the registry's word, warning about each, " +
-                  "which is what a registry publishing no signatures leaves available.",
+                  "'auto' trusts the verified marks already recorded in MODULE.bazel.lock, " +
+                  "checks what they leave against provider_locks, and runs `providers lock` " +
+                  "for the remainder: that needs network access and any credentials the " +
+                  "registry requires, runs once per version, and is answered from the " +
+                  "lockfile thereafter. 'files' is a standing assertion, re-checked on " +
+                  "every evaluation with recorded marks trusted not at all: every mirrored " +
+                  "package must match the provider_locks files, and nothing is run. Both " +
+                  "fail on an entry no hash covers. 'off' admits packages on the registry's " +
+                  "word, warning about each, which is what a registry publishing no " +
+                  "signatures leaves available.",
         ),
         "mirror_json": attr.label(
             allow_single_file = True,
