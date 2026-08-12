@@ -115,11 +115,12 @@ def _tflint_download_impl(ctx):
     if res.return_code != 0:
         fail("tflint --init failed to download plugins (exit {}):\n{}".format(res.return_code, res.stderr))
 
-    # reproducible: the archive is fetched against the sha256 its release
-    # publishes, and any plugin `--init` installs is named and versioned by the
-    # config file, which is itself an attribute. So the repo contents cache can
-    # serve this directory to a cold output base.
-    return ctx.repo_metadata(reproducible = True)
+    # Not reproducible: the archive's sha256 comes from a checksum document
+    # fetched live at each cold fetch, and `--init` downloads whatever the
+    # plugin releases serve at that moment, so identical attributes do not pin
+    # identical contents. Resolving the tool and plugin hashes in the
+    # extension as facts, the way the tf tool archive is pinned, would restore
+    # the claim.
 
 tflint_download = repository_rule(
     _tflint_download_impl,

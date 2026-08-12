@@ -102,8 +102,8 @@ def tf_download_impl(ctx, tool, build_tpl, url_template):
 
     # reproducible: the contents are a function of the attributes alone. Every
     # provider package is fetched against a sha256 the extension resolved and
-    # passed in, and the tool's own archive against the sha256 its release
-    # publishes. That makes the whole ~750MB directory eligible for the repo
+    # passed in, and the tool's own archive against the tool_sha256 attribute,
+    # resolved the same way. That makes the whole ~750MB directory eligible for the repo
     # contents cache, so a cold output base links it rather than downloading
     # and extracting it again -- which the repository cache alone cannot do,
     # since it holds the archives rather than the unpacked mirror.

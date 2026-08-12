@@ -82,10 +82,11 @@ def _tfdoc_download_impl(ctx):
     if not res.success:
         fail("!failed to dl: ", url)
 
-    # reproducible: the version attribute names an immutable release, and the
-    # archive is fetched against the sha256 that release publishes, so the repo
-    # contents cache can serve this directory to a cold output base.
-    return ctx.repo_metadata(reproducible = True)
+    # Not reproducible: the archive's sha256 comes from a checksum document
+    # fetched live at each cold fetch, not from an attribute, so identical
+    # attributes do not pin identical contents. Resolving the hash in the
+    # extension as a fact, the way the tf tool archive is pinned, would
+    # restore the claim.
 
 tfdoc_download = repository_rule(
     _tfdoc_download_impl,
