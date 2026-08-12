@@ -44,6 +44,14 @@ terraform defines it. Note that this makes the two- and three-component forms be
 **Prereleases are never selected by a constraint.** `~> 3.0` will not pick `3.7.0-alpha1`. This matches
 terraform, and means a prerelease can only reach the mirror through an exact pin.
 
+**Plugin protocol versions play no part in selection.** The registry advertises which plugin protocols each
+version speaks, and a constraint could in principle skip a version the toolchain's terraform cannot talk to.
+Terraform itself deliberately selects on the constraint alone and fails with an explicit error rather than
+silently choosing an older version (compatibility changes are supposed to arrive as major versions), and the
+mirror matches that. Under `provider_verification = "auto"` the incompatibility surfaces at resolution time,
+because `providers lock` runs under the same terraform release the toolchain uses and performs terraform's own
+protocol check; under the other modes it surfaces when the provider is first exercised.
+
 Two entries that resolve to the same version collapse into one, so overlapping constraints are harmless.
 
 ## Upgrading from a release that resolved in the repository rule
