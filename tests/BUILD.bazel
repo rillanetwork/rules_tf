@@ -11,8 +11,7 @@ tf_integration_test(
 
 tf_integration_test(
     name = "mirror_json_test",
-    bazel_cmds = ["test //..."],
-    test_runner = "//tests/runners:bazel_suite",
+    test_runner = "//tests/runners:mirror_json_suite",
     workspace_path = "bcr_mirror_json",
 )
 

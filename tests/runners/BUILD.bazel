@@ -20,6 +20,7 @@ package(default_applicable_licenses = ["//:license"])
     for name in [
         "bazel_suite",
         "bcr_suite",
+        "mirror_json_suite",
         "verified_suite",
     ]
 ]
