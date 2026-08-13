@@ -1,18 +1,7 @@
-load(
-    "@rules_tf//tf/toolchains/terraform:toolchain.bzl",
-    "terraform_download",
-    TERRAFORM_SHA256SUMS_TEMPLATE = "SHA256SUMS_TEMPLATE",
-    TERRAFORM_URL_TEMPLATE = "URL_TEMPLATE",
-)
-load("@rules_tf//tf/toolchains/tflint:toolchain.bzl", "tflint_download")
-load("@rules_tf//tf/toolchains/tfdoc:toolchain.bzl", "tfdoc_download")
-load(
-    "@rules_tf//tf/toolchains/tofu:toolchain.bzl",
-    "tofu_download",
-    TOFU_SHA256SUMS_TEMPLATE = "SHA256SUMS_TEMPLATE",
-    TOFU_URL_TEMPLATE = "URL_TEMPLATE",
-)
+"""The tf_repositories module extension, which declares the toolchains."""
+
 load("@rules_tf//tf:toolchains.bzl", "tf_toolchains")
+load("@rules_tf//tf:versions.bzl", "TFDOC_VERSION", "TFLINT_VERSION")
 load("@rules_tf//tf/toolchains:checksums.bzl", "resolve_tool_sha256")
 load("@rules_tf//tf/toolchains:facts.bzl", "MIRROR_PLATFORMS")
 load(
@@ -31,10 +20,30 @@ load(
     "resolve_providers",
 )
 load("@rules_tf//tf/toolchains:registry.bzl", "DEFAULT_REGISTRY")
-load("@rules_tf//tf:versions.bzl", "TFDOC_VERSION")
-load("@rules_tf//tf:versions.bzl", "TFLINT_VERSION")
+load(
+    "@rules_tf//tf/toolchains/terraform:toolchain.bzl",
+    "terraform_download",
+    TERRAFORM_SHA256SUMS_TEMPLATE = "SHA256SUMS_TEMPLATE",
+    TERRAFORM_URL_TEMPLATE = "URL_TEMPLATE",
+)
+load("@rules_tf//tf/toolchains/tfdoc:toolchain.bzl", "tfdoc_download")
+load("@rules_tf//tf/toolchains/tflint:toolchain.bzl", "tflint_download")
+load(
+    "@rules_tf//tf/toolchains/tofu:toolchain.bzl",
+    "tofu_download",
+    TOFU_SHA256SUMS_TEMPLATE = "SHA256SUMS_TEMPLATE",
+    TOFU_URL_TEMPLATE = "URL_TEMPLATE",
+)
 
 def detect_host_platform(ctx):
+    """Returns the host's (os, arch) pair, in the spelling terraform releases use.
+
+    Args:
+      ctx: a module_ctx or repository_ctx, for its `os` field.
+
+    Returns:
+      An (os, arch) tuple, e.g. ("darwin", "arm64").
+    """
     os = ctx.os.name
     if os == "mac os x":
         os = "darwin"
@@ -86,13 +95,13 @@ def _tf_repositories(ctx):
     for module in ctx.modules:
         for index, version_tag in enumerate(module.tags.download):
             tf_repo_name = _repo_name(
-                module=module,
+                module = module,
                 tool = "tf",
                 index = index,
                 suffix = "_{}_{}".format(host_detected_os, host_detected_arch),
             )
             tfdoc_repo_name = _repo_name(
-                module=module,
+                module = module,
                 tool = "tfdoc",
                 index = index,
                 suffix = "_{}_{}".format(host_detected_os, host_detected_arch),
@@ -103,10 +112,10 @@ def _tf_repositories(ctx):
                 os = host_detected_os,
                 arch = host_detected_arch,
             )
-            tfdoc_toolchains += [tfdoc_repo_name]
+            tfdoc_toolchains.append(tfdoc_repo_name)
 
             tflint_repo_name = _repo_name(
-                module=module,
+                module = module,
                 tool = "tflint",
                 index = index,
                 suffix = "_{}_{}".format(host_detected_os, host_detected_arch),
@@ -119,7 +128,7 @@ def _tf_repositories(ctx):
                 config = version_tag.tflint_config,
             )
 
-            tflint_toolchains += [tflint_repo_name]
+            tflint_toolchains.append(tflint_repo_name)
 
             if version_tag.mirror_json:
                 mirror = json.decode(ctx.read(version_tag.mirror_json))
@@ -227,9 +236,9 @@ def _tf_repositories(ctx):
                 resolve_errors = json.encode(resolve_errors),
             )
             if version_tag.use_tofu:
-                tofu_toolchains += [tf_repo_name]
+                tofu_toolchains.append(tf_repo_name)
             else:
-                terraform_toolchains += [tf_repo_name]
+                terraform_toolchains.append(tf_repo_name)
 
     tf_toolchains(
         name = "tf_toolchains",

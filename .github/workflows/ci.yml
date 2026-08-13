@@ -28,6 +28,11 @@ jobs:
       - name: Test
         run: bazel test //...
 
+      # `bazel build` only builds the check script; the check runs, and can
+      # fail, only under `bazel run`, which needs the workspace directory.
+      - name: Lint
+        run: bazel run //lint:buildifier.check
+
   tests:
     strategy:
       matrix:

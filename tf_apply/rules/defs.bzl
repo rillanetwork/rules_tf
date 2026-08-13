@@ -270,10 +270,10 @@ tf_plan = rule(
 )
 
 def tf_destroy_impl(ctx):
-    """
-    Builds a script to run `terraform plan -destroy` for the specified module.
+    """Builds a script to run `terraform plan -destroy` for the specified module.
+
     Writes the destroy plan to plan.tfplan so a subsequent `<mod>.apply` will
-    apply it — same review-then-execute pattern as the forward `.plan`/`.apply`
+    apply it - same review-then-execute pattern as the forward `.plan`/`.apply`
     flow.
 
     Args:
@@ -403,10 +403,11 @@ tf_apply = rule(
 )
 
 def tf_cmd_impl(ctx):
-    """
-    Builds a generic terraform runner script that forwards all arguments to
-    `terraform -chdir=$TF_DIR`. Intended for subcommands that don't have a
-    dedicated rule (destroy, state, import, taint, output, refresh, show, ...).
+    """Builds a generic terraform runner script forwarding every argument to terraform.
+
+    Arguments go to `terraform -chdir=$TF_DIR`. Intended for subcommands that
+    have no dedicated rule (destroy, state, import, taint, output, refresh,
+    show, ...).
 
     Args:
         ctx: The rule context

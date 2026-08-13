@@ -1,11 +1,11 @@
+"""Repository rule generating the BUILD file that declares every tf toolchain."""
+
 load("@rules_tf//tf/toolchains:registry.bzl", "DEFAULT_REGISTRY")
 load("@rules_tf//tf/toolchains:tf_toolchain.bzl", _tf_toolchain = "tf_toolchain")
 load("@rules_tf//tf/toolchains/terraform:toolchain.bzl", _terraform_declare_toolchain_chunk = "DECLARE_TOOLCHAIN_CHUNK")
+load("@rules_tf//tf/toolchains/tfdoc:toolchain.bzl", _tfdoc_declare_toolchain_chunk = "DECLARE_TOOLCHAIN_CHUNK", _tfdoc_toolchain = "tfdoc_toolchain")
+load("@rules_tf//tf/toolchains/tflint:toolchain.bzl", _tflint_declare_toolchain_chunk = "DECLARE_TOOLCHAIN_CHUNK", _tflint_toolchain = "tflint_toolchain")
 load("@rules_tf//tf/toolchains/tofu:toolchain.bzl", _tofu_declare_toolchain_chunk = "DECLARE_TOOLCHAIN_CHUNK")
-load("@rules_tf//tf/toolchains/tfdoc:toolchain.bzl", _tfdoc_toolchain = "tfdoc_toolchain")
-load("@rules_tf//tf/toolchains/tfdoc:toolchain.bzl", _tfdoc_declare_toolchain_chunk = "DECLARE_TOOLCHAIN_CHUNK")
-load("@rules_tf//tf/toolchains/tflint:toolchain.bzl", _tflint_toolchain = "tflint_toolchain")
-load("@rules_tf//tf/toolchains/tflint:toolchain.bzl", _tflint_declare_toolchain_chunk = "DECLARE_TOOLCHAIN_CHUNK")
 
 platforms = {
     "linux_amd64": {
@@ -13,45 +13,52 @@ platforms = {
             "@platforms//os:linux",
             "@platforms//cpu:x86_64",
         ],
-        "target_compatible_with" : [
+        "target_compatible_with": [
             "@platforms//os:linux",
             "@platforms//cpu:x86_64",
         ],
     },
-    "linux_arm64":{
+    "linux_arm64": {
         "exec_compatible_with": [
             "@platforms//os:linux",
             "@platforms//cpu:arm64",
         ],
-        "target_compatible_with" : [
+        "target_compatible_with": [
             "@platforms//os:linux",
             "@platforms//cpu:arm64",
         ],
     },
-    "darwin_amd64":{
+    "darwin_amd64": {
         "exec_compatible_with": [
             "@platforms//os:osx",
             "@platforms//cpu:x86_64",
         ],
-        "target_compatible_with" : [
+        "target_compatible_with": [
             "@platforms//os:osx",
             "@platforms//cpu:x86_64",
         ],
     },
-    "darwin_arm64":{
+    "darwin_arm64": {
         "exec_compatible_with": [
             "@platforms//os:osx",
             "@platforms//cpu:aarch64",
         ],
-        "target_compatible_with" : [
+        "target_compatible_with": [
             "@platforms//os:osx",
             "@platforms//cpu:aarch64",
         ],
     },
 }
 
-
 def detect_host_platform(ctx):
+    """Returns the host's (os, arch) pair, in the spelling terraform releases use.
+
+    Args:
+      ctx: a module_ctx or repository_ctx, for its `os` field.
+
+    Returns:
+      An (os, arch) tuple, e.g. ("darwin", "arm64").
+    """
     os = ctx.os.name
     if os == "mac os x":
         os = "darwin"
@@ -65,7 +72,6 @@ def detect_host_platform(ctx):
         arch = "amd64"
 
     return os, arch
-
 
 tf_toolchain = _tf_toolchain
 tfdoc_toolchain = _tfdoc_toolchain

@@ -18,3 +18,5 @@
 /tests/bcr_verified/bazel-*
 /tests/bcr_verified/.bazeliskrc
 __pycache__/
+# Aspects and caches written by the Bazel BSP IDE integration.
+/.bazelbsp/

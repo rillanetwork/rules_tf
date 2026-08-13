@@ -1,3 +1,5 @@
+"""Tofu's release coordinates, and the repository rule that downloads them."""
+
 load(
     "@rules_tf//tf/toolchains:tf_download.bzl",
     "TF_DOWNLOAD_ATTRS",

@@ -1,3 +1,5 @@
+"""Rule generating a module's versions.tf.json from its declared providers."""
+
 def _impl(ctx):
     out_file = ctx.actions.declare_file(ctx.label.name + ".sh")
     tf_version = ctx.attr.tf_version
@@ -19,7 +21,7 @@ def _impl(ctx):
         terraform_block["experiments"] = ctx.attr.experiments
 
     versions = {
-        "terraform": terraform_block
+        "terraform": terraform_block,
     }
 
     cmd = "printf '%s' '{json}' > ${{BUILD_WORKSPACE_DIRECTORY:-$PWD}}/{package}/versions.tf.json".format(
@@ -37,7 +39,6 @@ def _impl(ctx):
         files = depset([out_file]),
         executable = out_file,
     )]
-
 
 tf_gen_versions = rule(
     implementation = _impl,

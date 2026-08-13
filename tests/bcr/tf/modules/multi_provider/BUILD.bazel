@@ -6,9 +6,12 @@ tf_module(
         "random": {
             "source": "hashicorp/random",
             "version": "3.3.2",
-            "configuration_aliases": ["random.primary", "random.secondary"],
+            "configuration_aliases": [
+                "random.primary",
+                "random.secondary",
+            ],
         },
     },
-    tflint_config = "//tf:tflint-custom-config",
     skip_validation = True,  # Nested module with provider aliases can't be validated standalone
+    tflint_config = "//tf:tflint-custom-config",
 )

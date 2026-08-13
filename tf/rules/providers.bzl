@@ -1,3 +1,5 @@
+"""Providers exchanged between the tf module, artifact and package rules."""
+
 TfModuleInfo = provider(
     doc = "Contains information about a Tf module",
     fields = [
