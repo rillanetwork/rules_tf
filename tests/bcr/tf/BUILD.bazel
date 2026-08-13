@@ -2,12 +2,18 @@ load("@rules_tf//tf:def.bzl", "tf_format", "tf_gen_doc")
 
 tf_format(
     name = "tffmt",
-    modules = ["//{}/{}".format(package_name(), m) for m in subpackages(include = ["**/*"])],
+    modules = ["//{}/{}".format(
+        package_name(),
+        m,
+    ) for m in subpackages(include = ["**/*"])],
 )
 
 tf_gen_doc(
     name = "tfgendoc",
-    modules = ["//{}/{}".format(package_name(), m) for m in subpackages(include = ["**/*"])],
+    modules = ["//{}/{}".format(
+        package_name(),
+        m,
+    ) for m in subpackages(include = ["**/*"])],
 )
 
 filegroup(
@@ -26,7 +32,10 @@ filegroup(
 )
 
 tf_gen_doc(
-    name   = "custom-tfgendoc",
-    modules = ["//{}/{}".format(package_name(), m) for m in subpackages(include = ["**/*"])],
+    name = "custom-tfgendoc",
     config = ":tfdoc-config",
+    modules = ["//{}/{}".format(
+        package_name(),
+        m,
+    ) for m in subpackages(include = ["**/*"])],
 )

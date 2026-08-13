@@ -1,3 +1,5 @@
+"""Rule running tflint over a module, as a test."""
+
 load("@rules_tf//tf/rules:providers.bzl", "TfModuleInfo")
 
 def _impl(ctx):
@@ -29,7 +31,7 @@ def _impl(ctx):
     )
 
     if ctx.file.config != None:
-        deps += [ctx.file.config]
+        deps.append(ctx.file.config)
 
     return [DefaultInfo(
         runfiles = ctx.runfiles(files = deps),

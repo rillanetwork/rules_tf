@@ -6,8 +6,8 @@ tf_module(
         "random": "hashicorp/random:3.3.2",
     },
     tf_version = ">= 1.9, <= 1.13",
+    tflint_config = "//tf:tflint-custom-config",
     deps = [
         "//tf/modules/multi_provider",
     ],
-    tflint_config = "//tf:tflint-custom-config",
 )

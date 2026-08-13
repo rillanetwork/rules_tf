@@ -10,12 +10,12 @@ package(
 
 license(
     name = "license",
+    package_name = "rules_tf",
     copyright_notice = "Copyright 2025-2026 Rilla Network; portions Copyright Yann Degat and The Bazel Authors. See NOTICE.",
     license_kinds = [
         "@rules_license//licenses/spdx:Apache-2.0",
     ],
     license_text = "LICENSE",
-    package_name = "rules_tf",
 )
 
 package_metadata(

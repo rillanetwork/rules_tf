@@ -1,3 +1,5 @@
+"""The tf toolchain type: a terraform or tofu binary plus its provider mirror."""
+
 TfInfo = provider(
     doc = "Information about how to invoke Terraform/Tofu.",
     fields = ["tf", "deps", "mirror", "mirror_versions", "default_registry"],
