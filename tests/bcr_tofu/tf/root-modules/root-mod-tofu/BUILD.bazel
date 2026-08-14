@@ -1,0 +1,11 @@
+load("@rules_tf//tf:def.bzl", "tf_module")
+
+# Validated by tofu, resolving providers from the tofu-built mirror.
+tf_module(
+    name = "root-mod-tofu",
+    providers = {
+        "random": "hashicorp/random:3.3.2",
+        "null": "hashicorp/null:3.1.1",
+    },
+    tf_version = ">= 1.9, <= 1.13",
+)

@@ -73,3 +73,10 @@ toolchain(
     toolchain = ":no_git",
     toolchain_type = ":git_toolchain_type",
 )
+
+filegroup(
+    name = "all_files",
+    testonly = True,
+    srcs = glob(["*"]),
+    visibility = ["//:__subpackages__"],
+)

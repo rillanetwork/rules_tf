@@ -1,4 +1,6 @@
-load("@rules_tf//tf/toolchains:utils.bzl", "get_sha256sum")
+"""Downloads a tflint release and declares its toolchain."""
+
+load("@rules_tf//tf/toolchains:checksums.bzl", "get_sha256sum")
 
 TflintInfo = provider(
     doc = "Information about how to invoke tflint.",
@@ -88,7 +90,7 @@ def _tflint_download_impl(ctx):
     url_sha256sums = url_sha256sums_template.format(version = ctx.attr.version)
 
     ctx.download(
-        url = [ url_sha256sums],
+        url = [url_sha256sums],
         output = "sha256sums",
     )
 
@@ -115,7 +117,12 @@ def _tflint_download_impl(ctx):
     if res.return_code != 0:
         fail("tflint --init failed to download plugins (exit {}):\n{}".format(res.return_code, res.stderr))
 
-    return
+    # Not reproducible: the archive's sha256 comes from a checksum document
+    # fetched live at each cold fetch, and `--init` downloads whatever the
+    # plugin releases serve at that moment, so identical attributes do not pin
+    # identical contents. Resolving the tool and plugin hashes in the
+    # extension as facts, the way the tf tool archive is pinned, would restore
+    # the claim.
 
 tflint_download = repository_rule(
     _tflint_download_impl,

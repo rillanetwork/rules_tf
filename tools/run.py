@@ -105,7 +105,7 @@ def module_entry(target: str) -> dict[str, object]:
     ``{"package": "terraform/dev", "name": "gateway_service",
        "skip": False, "affected": True}``
 
-    ``skip``/``affected`` are constant: webrtc-sim has no deploy:manual or
+    ``skip``/``affected`` are constant: this ruleset has no deploy:manual or
     change-detection concepts, but the consuming reporting actions read these
     keys, so we emit them.
     """
@@ -171,7 +171,7 @@ def write_plan_error_artifact(
 ) -> None:
     """Write an error envelope for a failed plan.
 
-    Mirrors core-infra's terraform-plan.yml: failed plans surface as
+    Mirrors the consuming workflow's plan reporting: failed plans surface as
     ":x: plan failed" sections in the PR comment.
     """
     out_path = plan_artifacts_dir / plan_artifact_filename(target)

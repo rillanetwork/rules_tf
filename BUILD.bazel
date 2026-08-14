@@ -10,12 +10,12 @@ package(
 
 license(
     name = "license",
+    package_name = "rules_tf",
     copyright_notice = "Copyright 2025-2026 Rilla Network; portions Copyright Yann Degat and The Bazel Authors. See NOTICE.",
     license_kinds = [
         "@rules_license//licenses/spdx:Apache-2.0",
     ],
     license_text = "LICENSE",
-    package_name = "rules_tf",
 )
 
 package_metadata(
@@ -32,6 +32,33 @@ package_metadata(
 package_metadata_license(
     name = "package_metadata_license",
     kind = "@package_metadata//licenses/spdx:Apache-2.0",
+)
+
+# What the child modules under tests/ need to resolve this module through their
+# local_path_override, so a new package here needs an all_files filegroup of its
+# own and an entry below. Listed rather than globbed: a glob would not reach into
+# the subpackages, and would follow the bazel-* symlinks into the output base.
+filegroup(
+    name = "local_repository_files",
+    testonly = True,
+    srcs = [
+        "BUILD.bazel",
+        "LICENSE",
+        "MODULE.bazel",
+        "NOTICE",
+        "REPO.bazel",
+        "//tf:all_files",
+        "//tf/rules:all_files",
+        "//tf/toolchains:all_files",
+        "//tf/toolchains/git:all_files",
+        "//tf/toolchains/terraform:all_files",
+        "//tf/toolchains/tfdoc:all_files",
+        "//tf/toolchains/tflint:all_files",
+        "//tf/toolchains/tofu:all_files",
+        "//tf_apply:all_files",
+        "//tf_apply/rules:all_files",
+    ],
+    visibility = ["//tests:__subpackages__"],
 )
 
 toolchain_type(

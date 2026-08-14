@@ -1,2 +1,2 @@
-tests/bcr
-tests/bcr_mirror_json
+# The child modules under tests/ are hidden with --deleted_packages in
+# .bazelrc rather than listed here, which would hide their files too.

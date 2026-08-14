@@ -1,1 +1,3 @@
+"""Repository-wide defaults, applied to every package in this repo."""
+
 repo(default_package_metadata = ["//:package_metadata"])

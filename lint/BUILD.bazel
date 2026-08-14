@@ -6,24 +6,27 @@ load("@buildifier_prebuilt//:rules.bzl", "buildifier")
 # makes every consumer-built target implicitly depend on the root package, so
 # the root must stay loadable without dev-only repos.
 
+# Buildifier's default warning set applies. `lint_warnings` is deliberately
+# unset: buildifier silently ignores a "-all" entry (unlike "-<name>", which it
+# honours), so listing it only read as though lint were switched off.
+_EXCLUDE_PATTERNS = [
+    "./.git/*",
+    "./node_modules/*",
+    # Aspects vendored by the Bazel BSP IDE integration, untracked and not ours
+    # to reformat.
+    "./.bazelbsp/*",
+]
+
 buildifier(
     name = "buildifier.fix",
-    exclude_patterns = [
-        "./.git/*",
-        "./node_modules/*",
-    ],
+    exclude_patterns = _EXCLUDE_PATTERNS,
     lint_mode = "fix",
-    lint_warnings = ["-all"],
     mode = "fix",
 )
 
 buildifier(
     name = "buildifier.check",
-    exclude_patterns = [
-        "./.git/*",
-        "./node_modules/*",
-    ],
+    exclude_patterns = _EXCLUDE_PATTERNS,
     lint_mode = "warn",
-    lint_warnings = ["-all"],
     mode = "diff",
 )

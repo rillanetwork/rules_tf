@@ -8,12 +8,16 @@ tf_module(
         "terraform": "terraform.io/builtin/terraform",
     },
     tf_version = ">= 1.9, <= 1.10",
+    tflint_config = "//tf:tflint-custom-config",
     deps = [
         "//tf/modules/mod-a",
     ],
-    tflint_config = "//tf:tflint-custom-config",
 )
 
+# Shares the module's name deliberately: tf_root_module only declares targets
+# suffixed with ".init", ".plan" and so on, so nothing actually collides. That is
+# invisible to buildifier, which cannot expand a macro.
+# buildifier: disable=duplicated-name
 tf_root_module(
     name = "root-mod-a",
     backend = {
@@ -24,7 +28,10 @@ tf_root_module(
     module = ":root-mod-a",
     tfvars = {
         "input_var": "from-bazel-tfvars",
-        "regions": ["ap-southeast-1", "ap-south-1"],
+        "regions": [
+            "ap-southeast-1",
+            "ap-south-1",
+        ],
         "enabled": True,
         "replica_count": 3,
         "labels": {"team": "platform"},

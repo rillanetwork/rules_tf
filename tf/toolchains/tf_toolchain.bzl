@@ -1,6 +1,8 @@
+"""The tf toolchain type: a terraform or tofu binary plus its provider mirror."""
+
 TfInfo = provider(
     doc = "Information about how to invoke Terraform/Tofu.",
-    fields = ["tf", "deps", "mirror", "mirror_versions"],
+    fields = ["tf", "deps", "mirror", "mirror_versions", "default_registry"],
 )
 
 def _tf_toolchain_impl(ctx):
@@ -9,6 +11,7 @@ def _tf_toolchain_impl(ctx):
             tf = ctx.file.tf,
             mirror = ctx.file.mirror,
             mirror_versions = ctx.attr.mirror_versions,
+            default_registry = ctx.attr.default_registry,
             deps = [ctx.file.tf, ctx.file.mirror],
         ),
     )
@@ -31,6 +34,10 @@ tf_toolchain = rule(
         ),
         "mirror_versions": attr.string_list(
             doc = "Canonical 'source@version' strings for every provider present in the mirror.",
+        ),
+        "default_registry": attr.string(
+            doc = "Registry host an unqualified mirror source resolves against, so a rule can " +
+                  "address a provider exactly as the mirror did.",
         ),
     },
 )

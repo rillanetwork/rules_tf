@@ -1,4 +1,6 @@
-load("@rules_tf//tf/toolchains:utils.bzl", "get_sha256sum")
+"""Downloads a terraform-docs release and declares its toolchain."""
+
+load("@rules_tf//tf/toolchains:checksums.bzl", "get_sha256sum")
 
 TfdocInfo = provider(
     doc = "Information about how to invoke tfdoc.",
@@ -35,7 +37,6 @@ tfdoc_toolchain = rule(
     },
 )
 
-
 def _tfdoc_download_impl(ctx):
     ctx.report_progress("Downloading tfdoc")
 
@@ -64,7 +65,7 @@ def _tfdoc_download_impl(ctx):
     url_sha256sums = url_sha256sums_template.format(version = ctx.attr.version)
 
     ctx.download(
-        url = [ url_sha256sums],
+        url = [url_sha256sums],
         output = "sha256sums",
     )
 
@@ -82,7 +83,11 @@ def _tfdoc_download_impl(ctx):
     if not res.success:
         fail("!failed to dl: ", url)
 
-    return
+    # Not reproducible: the archive's sha256 comes from a checksum document
+    # fetched live at each cold fetch, not from an attribute, so identical
+    # attributes do not pin identical contents. Resolving the hash in the
+    # extension as a fact, the way the tf tool archive is pinned, would
+    # restore the claim.
 
 tfdoc_download = repository_rule(
     _tfdoc_download_impl,

@@ -20,3 +20,10 @@ exports_files(
         "//tf:__pkg__",
     ],
 )
+
+filegroup(
+    name = "all_files",
+    testonly = True,
+    srcs = glob(["*"]),
+    visibility = ["//:__subpackages__"],
+)

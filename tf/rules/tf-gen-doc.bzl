@@ -1,4 +1,4 @@
-load("@rules_pkg//pkg:providers.bzl", "PackageArtifactInfo")
+"""Rule running terraform-docs over a set of modules."""
 
 def _impl(ctx):
     tfdoc_runtime = ctx.toolchains["@rules_tf//:tfdoc_toolchain_type"].runtime
@@ -11,7 +11,7 @@ def _impl(ctx):
         fail("you must provide a list of modules")
 
     cmd = "for mod in {mods}; do {tfdoc} -c {config} markdown ${{BUILD_WORKSPACE_DIRECTORY}}/${{mod}}; done".format(
-        mods  = " ".join([p.label.package for p in ctx.attr.modules]),
+        mods = " ".join([p.label.package for p in ctx.attr.modules]),
         tfdoc = tfdoc_runtime.tfdoc.short_path,
         tfdoc_short = tfdoc_runtime.tfdoc.short_path,
         config = config_file.short_path,

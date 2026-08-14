@@ -3,7 +3,7 @@
 > **Note:** This is a significant fork of [yanndegat/rules_tf](https://github.com/yanndegat/rules_tf)
 > with additions including multi-version provider mirrors, `mirror_json` support,
 > inline provider declarations, and rules to init/plan/apply root modules
-> (absorbed from the former `rules_tf_apply` module). Requires Bazel 8 or later.
+> (absorbed from the former `rules_tf_apply` module). Requires Bazel 9 or later.
 
 The Tf rules are useful to validate, lint, format, plan and apply terraform code.
 
@@ -12,6 +12,12 @@ They can typically be used in a terraform monorepo of modules to lint, run valid
 # Why "Tf" and not "Terraform"
 
 Because now you can either use "tofu" or "terraform" binary.
+
+## Requirements
+
+**Bazel 9 or later**, enforced by `bazel_compatibility = [">=9.0.0"]`. The provider mirror resolves in a module
+extension and records what it resolved to as extension facts in `MODULE.bazel.lock`; `module_ctx.facts` does not
+exist on Bazel 8. See [docs/mirror.md](docs/mirror.md#where-the-resolved-mirror-is-recorded).
 
 ## Getting Started
 
@@ -91,6 +97,28 @@ The JSON file must contain an array of strings in the same
 `"[hostname/]namespace/type:version"` format used by the inline `mirror` attribute.
 This is useful when the provider list is generated or shared across multiple
 repositories.
+
+Each `mirror` entry pins an exact version (`hashicorp/random:3.6.0`) or gives a constraint
+(`hashicorp/random:~> 3.1.0`, `hashicorp/tls:>= 4.0.0, < 4.0.5`) resolved against the registry when the mirror is
+built. Pinning is recommended - see [docs/mirror.md](docs/mirror.md) for the version syntax, the prerelease rule,
+and how the resolved set is published.
+
+Resolution happens in the module extension, so the version a constraint selected and each package's URL and
+sha256 are recorded in `MODULE.bazel.lock`, as extension facts. There is no second lock file to maintain,
+constraints do not drift between builds, and a subsequent build makes no registry calls at all. See
+[docs/mirror.md](docs/mirror.md#where-the-resolved-mirror-is-recorded).
+
+A package is admitted on a signature-verified hash rather than on the registry's word. As it resolves, the
+extension runs `terraform providers lock` over each new version and checks the packages against the `zh:` hashes
+that verified against the signing keys compiled into the terraform binary; the result is recorded in that same
+`MODULE.bazel.lock`, so later builds read a pin a publisher signed. `provider_locks` accepts a
+`.terraform.lock.hcl` instead. See [docs/mirror.md](docs/mirror.md#verified-hashes).
+
+### Custom and private registries
+
+Mirror entries may name a registry host other than the default (`registry.terraform.io`, or
+`registry.opentofu.org` when `use_tofu = True`), including authenticated private registries. See
+[docs/registries.md](docs/registries.md).
 
 ### Using Tf rules
 

@@ -1,9 +1,8 @@
-load("@rules_tf//tf/rules:providers.bzl", "TfModuleInfo")
-load("@rules_tf//tf/rules:providers.bzl", "TfArtifactInfo")
-load("@rules_pkg//pkg:providers.bzl", "PackageArtifactInfo")
-load("@rules_pkg//pkg:providers.bzl", "PackageFilesInfo")
-load("@rules_pkg//pkg:providers.bzl", "PackageFilegroupInfo")
+"""The tf_module rule and the packaging, validation and format rules around it."""
+
 load("@bazel_skylib//lib:paths.bzl", "paths")
+load("@rules_pkg//pkg:providers.bzl", "PackageFilegroupInfo", "PackageFilesInfo")
+load("@rules_tf//tf/rules:providers.bzl", "TfArtifactInfo", "TfModuleInfo")
 
 def _artifact_impl(ctx):
     return [
@@ -18,18 +17,16 @@ def _artifact_impl(ctx):
         ctx.attr.package[OutputGroupInfo],
     ]
 
-
 tf_artifact = rule(
     implementation = _artifact_impl,
     attrs = {
-        "module": attr.label(providers = [TfModuleInfo], mandatory = True,),
+        "module": attr.label(providers = [TfModuleInfo], mandatory = True),
         "package": attr.label(providers = [OutputGroupInfo], mandatory = True, allow_single_file = True),
     },
 )
 
-
 def _module_impl(ctx):
-    if len([f for f in ctx.files.srcs if f.basename.endswith(".tf")  or f.basename.endswith(".tf.json") ]) == 0:
+    if len([f for f in ctx.files.srcs if f.basename.endswith(".tf") or f.basename.endswith(".tf.json")]) == 0:
         fail("tf modules must contain at least one .tf file.")
 
     all_srcs = depset(
@@ -58,25 +55,23 @@ tf_module = rule(
     },
 )
 
-
 def _compute_deps_pfi(s, prefix, files, mapped_files_depsets):
-    srcFiles = s[PackageFilesInfo]
+    src_files = s[PackageFilesInfo]
     new_pfi = PackageFilesInfo(
         dest_src_map = {
             paths.join(prefix, dest): src
-                    for dest, src in srcFiles.dest_src_map.items()
+            for dest, src in src_files.dest_src_map.items()
         },
-        attributes = srcFiles.attributes,
+        attributes = src_files.attributes,
     )
     files.append((new_pfi, s.label))
-    srcDefault = s[DefaultInfo]
-    mapped_files_depsets.append(srcDefault.files)
-
+    src_default = s[DefaultInfo]
+    mapped_files_depsets.append(src_default.files)
 
 def _compute_deps_pfgi(s, prefix, files, mapped_files_depsets):
     old_pfgi, old_di = s[PackageFilegroupInfo], s[DefaultInfo]
 
-    files += [
+    files.extend([
         (
             PackageFilesInfo(
                 dest_src_map = {
@@ -88,36 +83,33 @@ def _compute_deps_pfgi(s, prefix, files, mapped_files_depsets):
             origin,
         )
         for (pfi, origin) in old_pfgi.pkg_files
-    ]
+    ])
     mapped_files_depsets.append(old_di.files)
-
 
 def _compute_deps(dep, files, mapped_files_depsets):
     if TfModuleInfo in dep:
-        depMod = dep[TfModuleInfo]
+        dep_mod = dep[TfModuleInfo]
         prefix = ""
 
-        _compute_deps_pfi(depMod.files, prefix, files, mapped_files_depsets )
+        _compute_deps_pfi(dep_mod.files, prefix, files, mapped_files_depsets)
 
-        for subDep in depMod.deps:
-            if PackageFilesInfo in subDep:
-                _compute_deps_pfi(subDep, prefix, files, mapped_files_depsets )
-            if PackageFilegroupInfo in subDep:
-                _compute_deps_pfgi(subDep, prefix, files, mapped_files_depsets )
-
+        for sub_dep in dep_mod.deps:
+            if PackageFilesInfo in sub_dep:
+                _compute_deps_pfi(sub_dep, prefix, files, mapped_files_depsets)
+            if PackageFilegroupInfo in sub_dep:
+                _compute_deps_pfgi(sub_dep, prefix, files, mapped_files_depsets)
 
     if PackageFilesInfo in dep:
-        _compute_deps_pfi(dep, "", files, mapped_files_depsets )
+        _compute_deps_pfi(dep, "", files, mapped_files_depsets)
     if PackageFilegroupInfo in dep:
-        _compute_deps_pfgi(dep, "", files, mapped_files_depsets )
-
+        _compute_deps_pfgi(dep, "", files, mapped_files_depsets)
 
 def _module_deps_impl(ctx):
-    files     = []
+    files = []
     mapped_files_depsets = []
 
     for dep in ctx.attr.mod[TfModuleInfo].deps:
-        _compute_deps(dep, files, mapped_files_depsets )
+        _compute_deps(dep, files, mapped_files_depsets)
 
     return [
         PackageFilegroupInfo(
@@ -131,7 +123,6 @@ def _module_deps_impl(ctx):
             files = depset(transitive = mapped_files_depsets),
         ),
     ]
-
 
 tf_module_deps = rule(
     implementation = _module_deps_impl,
@@ -171,7 +162,6 @@ tf_validate_test = rule(
     ],
 )
 
-
 def _format_test_impl(ctx):
     module = ctx.attr.module[TfModuleInfo]
     tf_runtime = ctx.toolchains["@rules_tf//:tf_toolchain_type"].runtime
@@ -207,7 +197,7 @@ def _format_impl(ctx):
         fail("you must provide a list of modules")
 
     cmd = "for mod in {mods}; do {tf} fmt ${{BUILD_WORKSPACE_DIRECTORY}}/${{mod}}; done".format(
-        mods  = " ".join([p.label.package for p in ctx.attr.modules]),
+        mods = " ".join([p.label.package for p in ctx.attr.modules]),
         tf = tf_runtime.tf.short_path,
     )
 

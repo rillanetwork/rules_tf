@@ -1,0 +1,54 @@
+load("@rules_bazel_integration_test//bazel_integration_test:defs.bzl", "integration_test_utils")
+load(":defs.bzl", "tf_integration_test")
+
+package(default_applicable_licenses = ["//:license"])
+
+tf_integration_test(
+    name = "bcr_test",
+    test_runner = "//tests/runners:bcr_suite",
+    workspace_path = "bcr",
+)
+
+tf_integration_test(
+    name = "mirror_json_test",
+    test_runner = "//tests/runners:mirror_json_suite",
+    workspace_path = "bcr_mirror_json",
+)
+
+tf_integration_test(
+    name = "tofu_test",
+    bazel_cmds = [
+        "test //...",
+        "clean --expunge",
+        "test //...",
+    ],
+    test_runner = "//tests/runners:bazel_suite",
+    workspace_path = "bcr_tofu",
+)
+
+tf_integration_test(
+    name = "verified_test",
+    test_runner = "//tests/runners:verified_suite",
+    workspace_path = "bcr_verified",
+)
+
+# Not a member of the suite below: its mirror can reach no registry, so it only
+# resolves from what the other suites leave in the repository cache, and a
+# test_suite does not order its tests. CI runs it as a step afterwards.
+tf_integration_test(
+    name = "facts_test",
+    bazel_cmds = ["test //..."],
+    test_runner = "//tests/runners:bazel_suite",
+    workspace_path = "bcr_facts",
+)
+
+test_suite(
+    name = "integration_tests",
+    tags = integration_test_utils.DEFAULT_INTEGRATION_TEST_TAGS,
+    tests = [
+        ":bcr_test",
+        ":mirror_json_test",
+        ":tofu_test",
+        ":verified_test",
+    ],
+)

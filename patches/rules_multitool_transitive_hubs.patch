@@ -1,0 +1,26 @@
+Backport of theoremlp/rules_multitool@cb9b69e, "fix: don't add transitive hubs
+to direct deps" (#115), merged upstream but not released as of 1.11.1. Without
+it, this module's dev-only hub collides with the non-dev one that
+cgrindel_bazel_starlib declares via rules_bazel_integration_test:
+
+    Error in extension_metadata: in root_module_direct_dev_deps:
+    entry 'multitool' is also in root_module_direct_deps
+
+Drop this and the single_version_override once a fixed release is in the
+registry.
+
+--- a/multitool/extension.bzl
++++ b/multitool/extension.bzl
+@@ -26,10 +26,8 @@
+             else:
+                 lockfiles[h.hub_name] = [h.lockfile]
+
+-            if not module_ctx.is_dev_dependency(h):
+-                root_module_direct_deps[h.hub_name] = 1
+-            else:
+-                root_module_direct_dev_deps[h.hub_name] = 1
++            if mod.is_root:
++                (root_module_direct_dev_deps if module_ctx.is_dev_dependency(h) else root_module_direct_deps)[h.hub_name] = 1
+
+     # ensure _DEFAULT_HUB_NAME is present in non-dev and dev deps
+     # when non-dev and dev deps are non-empty.
