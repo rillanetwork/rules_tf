@@ -1,12 +1,20 @@
+load(":plugins_test.bzl", "tflint_plugins_test_suite")
+
 package(default_applicable_licenses = ["//:license"])
 
+# Covers the config grammar the ruleset resolution reads, which needs no network.
+tflint_plugins_test_suite()
+
 exports_files(
-    glob([
-        "*.bzl",
-        "*.tpl",
-        "*.hcl",
-        "*.sh",
-    ]),
+    glob(
+        [
+            "*.bzl",
+            "*.tpl",
+            "*.hcl",
+            "*.sh",
+        ],
+        exclude = ["*_test.bzl"],
+    ),
     visibility = [
         "//tf:__pkg__",
     ],
