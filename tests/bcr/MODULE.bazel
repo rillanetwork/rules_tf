@@ -36,6 +36,11 @@ tf.download(
     # no signatures leaves. Verification itself is covered by bcr_verified.
     provider_verification = "off",
     tfdoc_version = "0.19.0",
+    # Declares one downloadable ruleset alongside the bundled one, so this suite
+    # covers the plugin resolution as well as the provider resolution: the
+    # release sha256 becomes a fact, and the archive lands where tflint looks a
+    # plugin up.
+    tflint_config = "//tf:toolchain-tflint-config.hcl",
     tflint_version = "0.53.0",
     use_tofu = False,
     version = "1.9.5",

@@ -74,6 +74,27 @@ def tool_fact_key(tool, version, platform):
         platform = platform,
     )
 
+def tflint_plugin_fact_key(source, version, platform):
+    """Fact key under which one platform's tflint ruleset sha256 is remembered.
+
+    Kept apart from `tool_fact_key` because a ruleset is addressed by its source
+    repository rather than by a bare name: two rulesets may share a plugin name
+    across owners, and the source is what the release URL is built from.
+
+    Args:
+      source: the plugin's source, as the config's `source` attribute spells it.
+      version: the release the sha256 covers.
+      platform: the platform the release is built for, as "<os>_<arch>".
+
+    Returns:
+      The fact key.
+    """
+    return "tflint_plugin/{source}/{version}/{platform}".format(
+        source = source,
+        version = version,
+        platform = platform,
+    )
+
 # The platforms a tf toolchain can run on, and so the set whose package
 # coordinates every resolution records -- one lockfile then serves every machine
 # in a team, whichever wrote it. Enumerated rather than discovered because

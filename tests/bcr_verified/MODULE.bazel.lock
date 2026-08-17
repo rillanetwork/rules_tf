@@ -554,6 +554,18 @@
       "resolve/registry.terraform.io/hashicorp/tls/>= 4.0.0, < 4.0.5": {
         "version": "4.0.4"
       },
+      "tool/terraform-docs/0.19.0/darwin_amd64": {
+        "sha256": "fc3fa55037e35f1b76d1c7e84ed5a8b412ea6aed8264df050e1f692fad1dae29"
+      },
+      "tool/terraform-docs/0.19.0/darwin_arm64": {
+        "sha256": "c4e8d863571b8d5102089a22500426a18094855040eb07e4b83e4dfd1816dd23"
+      },
+      "tool/terraform-docs/0.19.0/linux_amd64": {
+        "sha256": "dd741a0ece81059a478684b414d95d72b8b74fa58f50ac4036b4e8b56130d64b"
+      },
+      "tool/terraform-docs/0.19.0/linux_arm64": {
+        "sha256": "ebda7dda3a1f678e9e3ef2f091c97b43f34a5a1b52fb9b1d3f44a003f481e8b5"
+      },
       "tool/terraform/1.9.5/darwin_amd64": {
         "sha256": "c28945c377d04b1d237f704729258234c471c8c4f617a1303042862f708ebbc6"
       },
@@ -565,6 +577,18 @@
       },
       "tool/terraform/1.9.5/linux_arm64": {
         "sha256": "adb3206971bc73fd37c7b50399ef79fe5610b03d3f2d1783d91e119422a113fd"
+      },
+      "tool/tflint/0.53.0/darwin_amd64": {
+        "sha256": "7f2041da26ed25641bc4c844ea999a04b8cb08c67ecfd78e7281640168b6bff6"
+      },
+      "tool/tflint/0.53.0/darwin_arm64": {
+        "sha256": "2ba8eefe6cbd5d34e5a0589a8897646e4da44c48f4c2fd9a77581d1e2b03bff8"
+      },
+      "tool/tflint/0.53.0/linux_amd64": {
+        "sha256": "bb0a3a6043ea1bcd221fc95d49bac831bb511eb31946ca6a4050983e9e584578"
+      },
+      "tool/tflint/0.53.0/linux_arm64": {
+        "sha256": "888de559c3716d1007496f22c949daf246c8e1f7315c320fea7eddb09de60ff2"
       }
     }
   }
