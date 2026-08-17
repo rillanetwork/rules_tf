@@ -7,6 +7,7 @@ TfModuleInfo = provider(
         "deps",
         "transitive_srcs",
         "module_path",
+        "transitive_providers_json",
     ],
 )
 

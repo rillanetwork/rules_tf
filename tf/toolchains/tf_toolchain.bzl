@@ -4,7 +4,7 @@ load("@bazel_skylib//lib:paths.bzl", "paths")
 
 TfInfo = provider(
     doc = "Information about how to invoke Terraform/Tofu.",
-    fields = ["tf", "deps", "mirror_path", "mirror_versions", "default_registry"],
+    fields = ["tf", "deps", "mirror_path", "mirror_versions", "mirror_hashes", "default_registry"],
 )
 
 def _mirror_path(ctx):
@@ -27,6 +27,7 @@ def _tf_toolchain_impl(ctx):
             tf = ctx.file.tf,
             mirror_path = _mirror_path(ctx),
             mirror_versions = ctx.attr.mirror_versions,
+            mirror_hashes = ctx.attr.mirror_hashes,
             default_registry = ctx.attr.default_registry,
             deps = [ctx.file.tf] + ctx.files.mirror_files + [ctx.file.mirror_versions_json],
         ),
@@ -57,6 +58,11 @@ tf_toolchain = rule(
         ),
         "mirror_versions": attr.string_list(
             doc = "Canonical 'source@version' strings for every provider present in the mirror.",
+        ),
+        "mirror_hashes": attr.string_dict(
+            doc = "Package hashes per mirrored provider: '<host>/<ns>/<type>@<version>' -> the " +
+                  "comma-joined sha256 of its package on each platform the extension resolved. " +
+                  "What a module's generated .terraform.lock.hcl is written from.",
         ),
         "default_registry": attr.string(
             doc = "Registry host an unqualified mirror source resolves against, so a rule can " +
