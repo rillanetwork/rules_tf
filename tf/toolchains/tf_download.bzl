@@ -116,6 +116,7 @@ tf_toolchain(
    mirror_files = "@{toolchain_repo}//:mirror_files",
    mirror_versions_json = "@{toolchain_repo}//:mirror_versions.json",
    mirror_versions = {mirror_versions},
+   mirror_hashes = {mirror_hashes},
    default_registry = "{default_registry}",
 )
 

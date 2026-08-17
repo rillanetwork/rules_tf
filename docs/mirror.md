@@ -251,3 +251,40 @@ The same source may appear at several versions; each is fetched independently, s
 Modules then select whichever version they require through their own `required_providers` block.
 
 When nothing is mirrored, `init` is run without `-plugin-dir` and resolves providers against the registry.
+
+## The generated `.terraform.lock.hcl`
+
+A module initialised against an unpacked mirror has no lock file to read, so terraform hashes the packages it
+finds, writes down what it computed, and warns that the result covers only the platform it ran on:
+
+```
+Warning: Incomplete lock file information for providers
+...
+The current .terraform.lock.hcl file only includes checksums for linux_amd64
+```
+
+None of that is news here. The extension resolved a package sha256 for every platform before a byte was fetched,
+checked it against the signature-derived hashes, and Bazel fetched each package against the one for the host. So
+each module's rundir is given a `.terraform.lock.hcl` written from those hashes, and the warning goes with it.
+
+The document is a record rather than a constraint. Terraform can only verify a `zh:` hash against a zip, and a
+mirror hands it an extracted directory, so it takes the entries as given - the check that matters ran in the
+extension, as [above](#verified-hashes). It does append the `h1:` hash it computes for the running platform,
+which is why the file is copied into the rundir rather than symlinked from the build output.
+
+Every platform's hash goes into each block, since `hashes` is a set terraform matches the installed package
+against: the members covering other platforms are what let one document serve every machine.
+
+### Choosing the version
+
+The one field that is not set-shaped is `version`: a lock file holds one per provider address. Two blocks for
+one address is a hard `Duplicate provider lock` error, and a version a module's constraints exclude fails `init`
+outright, so a source the mirror stocks at several versions has to be chosen between.
+
+That choice comes from the `providers` a module and its dependencies declare - the same declarations
+`versions.tf.json` is generated from - ANDed together the way terraform ANDs them across a configuration. A
+source the mirror stocks once needs no declaration and is always named. A source stocked several times over,
+whose declared constraints select none of them, is left out of the document entirely, so terraform reports the
+conflict against the whole configuration rather than against a version this picked for it.
+
+Providers a module does not use are harmless: `init` prunes them from the file it rewrites.
