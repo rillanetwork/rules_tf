@@ -26,8 +26,23 @@ load(
     TERRAFORM_SHA256SUMS_TEMPLATE = "SHA256SUMS_TEMPLATE",
     TERRAFORM_URL_TEMPLATE = "URL_TEMPLATE",
 )
-load("@rules_tf//tf/toolchains/tfdoc:toolchain.bzl", "tfdoc_download")
-load("@rules_tf//tf/toolchains/tflint:toolchain.bzl", "tflint_download")
+load(
+    "@rules_tf//tf/toolchains/tfdoc:toolchain.bzl",
+    "tfdoc_download",
+    TFDOC_ARCHIVE_TEMPLATE = "ARCHIVE_TEMPLATE",
+    TFDOC_SHA256SUMS_TEMPLATE = "SHA256SUMS_TEMPLATE",
+)
+load(
+    "@rules_tf//tf/toolchains/tflint:plugins.bzl",
+    "parse_tflint_plugins",
+    "resolve_tflint_plugins",
+)
+load(
+    "@rules_tf//tf/toolchains/tflint:toolchain.bzl",
+    "tflint_download",
+    TFLINT_ARCHIVE_TEMPLATE = "ARCHIVE_TEMPLATE",
+    TFLINT_SHA256SUMS_TEMPLATE = "SHA256SUMS_TEMPLATE",
+)
 load(
     "@rules_tf//tf/toolchains/tofu:toolchain.bzl",
     "tofu_download",
@@ -106,11 +121,30 @@ def _tf_repositories(ctx):
                 index = index,
                 suffix = "_{}_{}".format(host_detected_os, host_detected_arch),
             )
+
+            # Resolved here rather than in the download repository for the
+            # reason the tf tool archive is: every byte that repository fetches
+            # is then pinned by an attribute, which is what lets it declare
+            # itself reproducible and be served from the repo contents cache.
+            tfdoc_sha256, tfdoc_facts, tfdoc_error = resolve_tool_sha256(
+                ctx,
+                "terraform-docs",
+                version_tag.tfdoc_version,
+                host_detected_os,
+                host_detected_arch,
+                ctx.facts,
+                TFDOC_SHA256SUMS_TEMPLATE,
+                archive_template = TFDOC_ARCHIVE_TEMPLATE,
+            )
+            facts.update(tfdoc_facts)
+
             tfdoc_download(
                 name = tfdoc_repo_name,
                 version = version_tag.tfdoc_version,
                 os = host_detected_os,
                 arch = host_detected_arch,
+                tool_sha256 = tfdoc_sha256,
+                resolve_errors = json.encode([tfdoc_error] if tfdoc_error else []),
             )
             tfdoc_toolchains.append(tfdoc_repo_name)
 
@@ -120,12 +154,42 @@ def _tf_repositories(ctx):
                 index = index,
                 suffix = "_{}_{}".format(host_detected_os, host_detected_arch),
             )
+
+            tflint_sha256, tflint_facts, tflint_error = resolve_tool_sha256(
+                ctx,
+                "tflint",
+                version_tag.tflint_version,
+                host_detected_os,
+                host_detected_arch,
+                ctx.facts,
+                TFLINT_SHA256SUMS_TEMPLATE,
+                archive_template = TFLINT_ARCHIVE_TEMPLATE,
+            )
+            facts.update(tflint_facts)
+            tflint_errors = [tflint_error] if tflint_error else []
+
+            # The config is read here as well as templated into the download
+            # repository: the rulesets it declares are what the extension has to
+            # resolve, and only what it resolves ends up in the lockfile.
+            tflint_plugins, plugin_facts, plugin_errors = resolve_tflint_plugins(
+                ctx,
+                parse_tflint_plugins(ctx.read(version_tag.tflint_config)),
+                host_detected_os,
+                host_detected_arch,
+                ctx.facts,
+            )
+            facts.update(plugin_facts)
+            tflint_errors.extend(plugin_errors)
+
             tflint_download(
                 name = tflint_repo_name,
                 version = version_tag.tflint_version,
                 os = host_detected_os,
                 arch = host_detected_arch,
+                tool_sha256 = tflint_sha256,
                 config = version_tag.tflint_config,
+                plugins_json = json.encode(tflint_plugins),
+                resolve_errors = json.encode(tflint_errors),
             )
 
             tflint_toolchains.append(tflint_repo_name)

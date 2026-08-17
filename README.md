@@ -120,6 +120,41 @@ Mirror entries may name a registry host other than the default (`registry.terraf
 `registry.opentofu.org` when `use_tofu = True`), including authenticated private registries. See
 [docs/registries.md](docs/registries.md).
 
+### tflint rulesets
+
+`tflint_config` sets the toolchain-wide tflint config, and the ruleset plugins it declares are mirrored alongside
+the providers:
+
+```python
+tf.download(
+    version = "1.9.5",
+    tflint_config = "//terraform:tflint.hcl",
+    mirror = [...],
+)
+```
+
+```hcl
+plugin "aws" {
+  enabled = true
+  version = "0.48.0"
+  source  = "github.com/terraform-linters/tflint-ruleset-aws"
+}
+```
+
+Each declared ruleset is pinned the way the provider packages are: the extension resolves its release sha256 for
+every platform, records them as facts in `MODULE.bazel.lock`, and the toolchain fetches the archive against the
+host's. A `plugin` block naming no `source` is bundled into the tflint binary and downloads nothing, which is what
+`plugin "terraform"` is. A `version` is mandatory for anything carrying a `source`, and the source must be a
+`github.com/<owner>/<repo>` repository, which is the only form tflint publishes releases under.
+
+A ruleset is pinned by a hash read from its release's `checksums.txt`, not by a publisher's signature: weaker than
+the provider mirror's [verified hashes](docs/mirror.md#verified-hashes), and weaker than the check `tflint --init`
+makes against a config's `signing_key`.
+
+Individual modules may override the config with their own `tflint_config` attribute (see
+[Using Tf rules](#using-tf-rules)), but those overrides are invisible to the extension: only the toolchain-wide
+config decides which rulesets are downloaded.
+
 ### Using Tf rules
 
 Once you've imported the rule set, you can then load the tf rules in your `BUILD` files with:

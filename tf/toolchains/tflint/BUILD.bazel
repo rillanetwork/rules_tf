@@ -1,27 +1,40 @@
+load(":plugins_test.bzl", "tflint_plugins_test_suite")
+
 package(default_applicable_licenses = ["//:license"])
 
+# Covers the config grammar the ruleset resolution reads, which needs no network.
+tflint_plugins_test_suite()
+
+# The tests themselves are not distributed: they are the only .bzl files here
+# that a consumer never loads, and they depend on bazel_skylib's unittest.
 filegroup(
     name = "standard_package",
     srcs = [
         "BUILD.bazel",
-    ] + glob([
-        "*.bzl",
-        "*.tpl",
-        "*.hcl",
-        "*.sh",
-    ]),
+    ] + glob(
+        [
+            "*.bzl",
+            "*.tpl",
+            "*.hcl",
+            "*.sh",
+        ],
+        exclude = ["*_test.bzl"],
+    ),
     visibility = [
         "//tf:__pkg__",
     ],
 )
 
 exports_files(
-    glob([
-        "*.bzl",
-        "*.tpl",
-        "*.hcl",
-        "*.sh",
-    ]),
+    glob(
+        [
+            "*.bzl",
+            "*.tpl",
+            "*.hcl",
+            "*.sh",
+        ],
+        exclude = ["*_test.bzl"],
+    ),
     visibility = [
         "//tf:__pkg__",
     ],

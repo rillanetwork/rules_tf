@@ -1,6 +1,17 @@
 """Downloads a tflint release and declares its toolchain."""
 
-load("@rules_tf//tf/toolchains:checksums.bzl", "get_sha256sum")
+load(":plugins.bzl", "download_tflint_plugins")
+
+# The release archive carries no version in its name, unlike terraform's, so the
+# platform alone identifies it.
+ARCHIVE_TEMPLATE = "{tool}_{os}_{arch}.zip"
+
+URL_TEMPLATE = "https://github.com/terraform-linters/tflint/releases/download/v{version}/{file}"
+
+SHA256SUMS_TEMPLATE = "https://github.com/terraform-linters/tflint/releases/download/v{version}/checksums.txt"
+
+# Where the wrapper points TFLINT_PLUGIN_DIR, and so where a ruleset must land.
+_PLUGIN_DIR = "tflint_plugins"
 
 TflintInfo = provider(
     doc = "Information about how to invoke tflint.",
@@ -58,6 +69,10 @@ tflint_toolchain = rule(
 )
 
 def _tflint_download_impl(ctx):
+    resolve_errors = json.decode(ctx.attr.resolve_errors)
+    if len(resolve_errors) > 0:
+        fail("the tflint toolchain could not be resolved:\n  " + "\n  ".join(resolve_errors))
+
     ctx.report_progress("Downloading tflint")
 
     ctx.template(
@@ -83,25 +98,12 @@ def _tflint_download_impl(ctx):
         executable = False,
     )
 
-    file = "tflint_{os}_{arch}.zip".format(version = ctx.attr.version, os = ctx.attr.os, arch = ctx.attr.arch)
-    url_template = "https://github.com/terraform-linters/tflint/releases/download/v{version}/{file}"
-    url = url_template.format(version = ctx.attr.version, file = file)
-    url_sha256sums_template = "https://github.com/terraform-linters/tflint/releases/download/v{version}/checksums.txt"
-    url_sha256sums = url_sha256sums_template.format(version = ctx.attr.version)
-
-    ctx.download(
-        url = [url_sha256sums],
-        output = "sha256sums",
-    )
-
-    data = ctx.read("sha256sums")
-    sha256sum = get_sha256sum(data, file)
-    if sha256sum == None or sha256sum == "":
-        fail("Could not find sha256sum for file {}".format(file))
+    file = ARCHIVE_TEMPLATE.format(tool = "tflint", os = ctx.attr.os, arch = ctx.attr.arch)
+    url = URL_TEMPLATE.format(version = ctx.attr.version, file = file)
 
     res = ctx.download_and_extract(
         url = url,
-        sha256 = sha256sum,
+        sha256 = ctx.attr.tool_sha256,
         type = "zip",
         output = "tflint",
     )
@@ -109,20 +111,12 @@ def _tflint_download_impl(ctx):
     if not res.success:
         fail("!failed to dl: ", url)
 
-    res = ctx.execute([
-        "bash",
-        "-c",
-        "mkdir -p tflint_plugins; TFLINT_PLUGIN_DIR=./tflint_plugins tflint/tflint -c ./config.hcl --init",
-    ])
-    if res.return_code != 0:
-        fail("tflint --init failed to download plugins (exit {}):\n{}".format(res.return_code, res.stderr))
+    # The rulesets the config declares, laid out where the wrapper tells tflint
+    # to look. This is what `tflint --init` used to do from inside this
+    # repository, on coordinates it chose itself.
+    download_tflint_plugins(ctx, json.decode(ctx.attr.plugins_json), _PLUGIN_DIR)
 
-    # Not reproducible: the archive's sha256 comes from a checksum document
-    # fetched live at each cold fetch, and `--init` downloads whatever the
-    # plugin releases serve at that moment, so identical attributes do not pin
-    # identical contents. Resolving the tool and plugin hashes in the
-    # extension as facts, the way the tf tool archive is pinned, would restore
-    # the claim.
+    return ctx.repo_metadata(reproducible = True)
 
 tflint_download = repository_rule(
     _tflint_download_impl,
@@ -130,6 +124,26 @@ tflint_download = repository_rule(
         "version": attr.string(mandatory = True),
         "os": attr.string(mandatory = True),
         "arch": attr.string(mandatory = True),
+        "tool_sha256": attr.string(
+            mandatory = True,
+            doc = "sha256 of tflint's release archive for this platform, resolved by the " +
+                  "module extension from the release's checksums. Passed in rather than " +
+                  "fetched so that every download this repository makes is pinned by an " +
+                  "attribute.",
+        ),
+        "plugins_json": attr.string(
+            default = "[]",
+            doc = "JSON list of the rulesets the config declares, each already resolved by " +
+                  "the module extension to a download_url and sha256. The extension is " +
+                  "reproducible, so this is not itself recorded in MODULE.bazel.lock; the " +
+                  "facts it was derived from are.",
+        ),
+        "resolve_errors": attr.string(
+            default = "[]",
+            doc = "JSON list of the releases the module extension could not resolve. " +
+                  "Reported here rather than there so that an unreachable release fails " +
+                  "only the builds that lint something.",
+        ),
         "config": attr.label(
             mandatory = False,
             default = "@rules_tf//tf/toolchains/tflint:config.hcl",
