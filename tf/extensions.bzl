@@ -87,6 +87,7 @@ def _tf_repositories(ctx):
     terraform_toolchains = []
     tofu_toolchains = []
     repo_mirrors = {}
+    repo_hashes = {}
 
     # Accumulated across every download tag and handed back at the end, for
     # bzlmod to persist in MODULE.bazel.lock.
@@ -225,6 +226,13 @@ def _tf_repositories(ctx):
 
             repo_mirrors[tf_repo_name] = mirror_manifest(packages)
 
+            # Carried to the toolchain so a module's generated lock file can
+            # name every platform's package, not just the one that built it.
+            repo_hashes[tf_repo_name] = {
+                "%s/%s/%s@%s" % (p["host"], p["namespace"], p["type"], p["version"]): ",".join(p["hashes"])
+                for p in packages
+            }
+
             download = tofu_download if version_tag.use_tofu else terraform_download
             download(
                 name = tf_repo_name,
@@ -249,6 +257,8 @@ def _tf_repositories(ctx):
         # string_dict, so the manifest is joined on "," (a "source@version"
         # entry never contains one).
         repo_mirrors = {k: ",".join(v) for k, v in repo_mirrors.items()},
+        # string_dict values are flat, so a repo's table travels as JSON.
+        repo_hashes = {k: json.encode(v) for k, v in repo_hashes.items()},
         os = host_detected_os,
         arch = host_detected_arch,
     )

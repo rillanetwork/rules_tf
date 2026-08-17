@@ -1,3 +1,4 @@
+load(":provider_lockfile_test.bzl", "provider_lockfile_test_suite")
 load(":provider_locks_test.bzl", "provider_locks_test_suite")
 load(":provider_mirror_test.bzl", "provider_mirror_test_suite")
 load(":registry_test.bzl", "registry_test_suite")
@@ -15,6 +16,8 @@ provider_mirror_test_suite()
 registry_test_suite()
 
 provider_locks_test_suite()
+
+provider_lockfile_test_suite()
 
 # The tests themselves are not distributed: they are the only .bzl files here
 # that a consumer never loads, and they depend on bazel_skylib's unittest.

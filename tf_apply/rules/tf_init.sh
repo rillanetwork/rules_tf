@@ -8,6 +8,7 @@ set -euo pipefail
 TF_BIN_PATH="${PWD}/%TF_BIN_PATH%"
 TF_DIR="%TF_DIR%"
 TF_PLUGINS_DIR="${PWD}/%TF_PLUGINS_DIR%"
+TF_LOCK_FILE="%TF_LOCK_FILE%"
 
 if [ -z "${BUILD_WORKSPACE_DIRECTORY:-}" ]; then
     echo "BUILD_WORKSPACE_DIRECTORY is not set. Please set it before running this script."
@@ -29,6 +30,14 @@ rm -rf "$PWD/$TF_DIR/.terraform.lock.hcl"
 # remove any existing .terraform and .terraform.lock.hcl files
 rm -rf "$OUT_DIR/.terraform"
 rm -rf "$OUT_DIR/.terraform.lock.hcl"
+
+# Copied rather than symlinked: init rewrites the lock in place, appending the
+# h1: hash it computes for the running platform, and through a runfiles symlink
+# that write would land on the build output itself.
+if [ -n "$TF_LOCK_FILE" ]; then
+    cp -f "$TF_LOCK_FILE" "$PWD/$TF_DIR/.terraform.lock.hcl"
+    chmod u+w "$PWD/$TF_DIR/.terraform.lock.hcl"
+fi
 
 echo "Running 'terraform init' in directory: $PWD/$TF_DIR"
 
