@@ -57,6 +57,32 @@ def package_fact_key(host, namespace, provider_type, version, platform):
         platform = platform,
     )
 
+def dirhash_fact_key(host, namespace, provider_type, version):
+    """Fact key under which a version's `h1:` directory hashes are remembered.
+
+    The value carries `hashes`, a comma-joined list of `h1:` values with the
+    scheme prefix stripped (they are base64, so they never contain a comma).
+    These are separate from the `package/` entries because they carry no
+    platform label: `terraform providers lock` emits them as one unlabelled
+    list per provider version, and terraform matches an installed directory
+    against the set rather than against one member of it.
+
+    Args:
+      host: registry hostname the provider resolves against.
+      namespace: the provider's namespace.
+      provider_type: the provider's type.
+      version: the concrete version the hashes cover.
+
+    Returns:
+      The fact key.
+    """
+    return "h1/{host}/{ns}/{type}/{version}".format(
+        host = host,
+        ns = namespace,
+        type = provider_type,
+        version = version,
+    )
+
 def tool_fact_key(tool, version, platform):
     """Fact key under which one platform's tool release sha256 is remembered.
 
@@ -74,11 +100,9 @@ def tool_fact_key(tool, version, platform):
         platform = platform,
     )
 
-# The platforms a tf toolchain can run on, and so the set whose package
-# coordinates every resolution records -- one lockfile then serves every machine
-# in a team, whichever wrote it. Enumerated rather than discovered because
-# `module_ctx.facts` is a lookup with no iteration, so a platform's coordinates
-# can only be asked for by name.
+# The platforms every resolution records coordinates for, so one lockfile serves
+# every machine in a team. Enumerated rather than discovered because
+# `module_ctx.facts` is a lookup with no iteration.
 MIRROR_PLATFORMS = [
     "linux_amd64",
     "linux_arm64",

@@ -3,12 +3,14 @@
 load("@rules_tf//tf:toolchains.bzl", "tf_toolchains")
 load("@rules_tf//tf:versions.bzl", "TFDOC_VERSION", "TFLINT_VERSION")
 load("@rules_tf//tf/toolchains:checksums.bzl", "resolve_tool_sha256")
-load("@rules_tf//tf/toolchains:facts.bzl", "MIRROR_PLATFORMS")
+load("@rules_tf//tf/toolchains:facts.bzl", "MIRROR_PLATFORMS", "dirhash_fact_key")
 load(
     "@rules_tf//tf/toolchains:provider_locks.bzl",
+    "collect_provider_dirhashes",
     "enforce_lock_coverage",
     "fetch_lock_tool",
     "lock_providers",
+    "merge_provider_locks",
     "parse_provider_locks",
     "unverified_packages",
     "verify_provider_hashes",
@@ -179,8 +181,13 @@ def _tf_repositories(ctx):
             else:
                 to_check = unverified_packages(facts, packages, platforms)
 
+            # The `h1:` dirhashes this evaluation saw, from whichever hash
+            # source ran. Empty when nothing was left to check, which is the
+            # settled case: the facts already hold them.
+            dirhashes = {}
+
             if to_check:
-                provider_locks = parse_provider_locks([
+                provider_locks, dirhashes = parse_provider_locks([
                     ctx.read(lock)
                     for lock in version_tag.provider_locks
                 ])
@@ -198,7 +205,7 @@ def _tf_repositories(ctx):
                     else:
                         # Host only: the tool is here to check signatures, not
                         # to be built with.
-                        locked = lock_providers(
+                        locked, locked_dirhashes = lock_providers(
                             ctx,
                             fetch_lock_tool(
                                 ctx,
@@ -210,19 +217,43 @@ def _tf_repositories(ctx):
                                 tool_sha256,
                             ),
                             uncovered,
+                            platforms,
                         )
+                        dirhashes = merge_provider_locks(dirhashes, locked_dirhashes)
                         uncovered = verify_provider_hashes(facts, uncovered, platforms, locked)
 
                 enforce_lock_coverage(verification, uncovered)
 
             repo_mirrors[tf_repo_name] = mirror_manifest(packages)
 
+            # Remembered under a key of their own: a dirhash covers a version
+            # rather than a platform, so widening a `package/` value to hold one
+            # would both misplace it and break every lockfile already carrying
+            # that value.
+            collected = collect_provider_dirhashes(ctx.facts, packages, dirhashes)
+            for p in packages:
+                key = "%s/%s/%s@%s" % (p["host"], p["namespace"], p["type"], p["version"])
+                if key in collected:
+                    facts[dirhash_fact_key(
+                        p["host"],
+                        p["namespace"],
+                        p["type"],
+                        p["version"],
+                    )] = {"hashes": ",".join(collected[key])}
+
             # Carried to the toolchain so a module's generated lock file can
-            # name every platform's package, not just the one that built it.
-            repo_hashes[tf_repo_name] = {
-                "%s/%s/%s@%s" % (p["host"], p["namespace"], p["type"], p["version"]): ",".join(p["hashes"])
-                for p in packages
-            }
+            # name every platform's package, not just the one that built it, and
+            # can carry the dirhashes terraform checks the unpacked tree
+            # against. Joined here rather than into the packages themselves:
+            # those reach the download repository as an attribute, which would
+            # make a dirhash arriving later re-fetch the whole mirror to no
+            # purpose.
+            repo_hashes[tf_repo_name] = {}
+            for p in packages:
+                key = "%s/%s/%s@%s" % (p["host"], p["namespace"], p["type"], p["version"])
+                repo_hashes[tf_repo_name][key] = ",".join(
+                    p["hashes"] + ["h1:" + h for h in collected.get(key, [])],
+                )
 
             download = tofu_download if version_tag.use_tofu else terraform_download
             download(

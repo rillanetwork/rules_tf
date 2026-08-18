@@ -1,4 +1,5 @@
 load("@rules_tf//tf:def.bzl", "tf_module")
+load("@rules_tf//tf_apply:defs.bzl", "tf_root_module")
 
 # Resolves its providers from the mirror, every package of which was admitted
 # on a signature-verified hash held in MODULE.bazel.lock.
@@ -9,4 +10,19 @@ tf_module(
         "null": "hashicorp/null:3.1.1",
     },
     tf_version = ">= 1.9",
+)
+
+# The init path is what the generated `.terraform.lock.hcl` is written for, and
+# this is the only workspace whose mirror is signature-verified -- so it is the
+# only one whose lock document carries the `h1:` dirhashes that keep init from
+# rewriting the file it was handed.
+# buildifier: disable=duplicated-name
+tf_root_module(
+    name = "root-mod-verified",
+    backend = {
+        "local": {
+            "path": "terraform.tfstate",
+        },
+    },
+    module = ":root-mod-verified",
 )

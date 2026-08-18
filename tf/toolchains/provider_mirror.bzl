@@ -441,10 +441,13 @@ def resolve_providers(ctx, entries, default_host, os, arch, facts):
             "version": t["version"],
             "download_url": t["metas"][platform]["download_url"],
             "sha256": t["metas"][platform]["sha256"],
-            # Every platform's hash, not just the host's: a generated
-            # `.terraform.lock.hcl` covering one platform is what terraform
-            # warns about.
-            "hashes": sorted({meta["sha256"]: True for meta in t["metas"].values()}),
+            # Every platform's package hash, not just the host's: these are
+            # what a module's generated `.terraform.lock.hcl` records, and a
+            # lock file covering one platform is the thing terraform warns
+            # about. Scheme-prefixed as a lock document spells them, so the
+            # `h1:` dirhashes the verification pass captures ride the same
+            # channel and the renderer emits what it is given.
+            "hashes": sorted({"zh:" + meta["sha256"]: True for meta in t["metas"].values()}),
         })
 
     return packages, new_facts, client["errors"]

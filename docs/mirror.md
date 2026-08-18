@@ -179,6 +179,12 @@ once per version, needs network access and the registry credentials described in
 [registries.md](registries.md), and is then answered from `MODULE.bazel.lock` until the manifest changes. Under a
 tofu toolchain it runs `tofu providers lock` against `registry.opentofu.org`.
 
+The run names every platform with a `-platform=` flag, which is also how the `h1:` dirhashes that complete a
+[generated lock file](#the-generated-terraformlockhcl) are obtained: `zh:` values come from the signed
+`SHA256SUMS`, but a dirhash can only be computed over an unpacked package, so each named platform costs one
+package download. They are remembered under their own `h1/<host>/<ns>/<type>/<version>` fact - a dirhash covers a
+version rather than a platform, since the lock document lists them flat with no platform label.
+
 Two consequences follow from where the result is kept:
 
 - **Editing a recorded hash does not re-trigger the check**: facts are not an input Bazel invalidates the
@@ -278,14 +284,20 @@ Warning: Incomplete lock file information for providers
 The current .terraform.lock.hcl file only includes checksums for linux_amd64
 ```
 
-None of that is news here. The extension resolved a package sha256 for every platform before a byte was fetched,
-checked it against the signature-derived hashes, and Bazel fetched each package against the one for the host. So
-each module's rundir is given a `.terraform.lock.hcl` written from those hashes, and the warning goes with it.
+Every one of those hashes is already known. The extension resolved a package sha256 for every platform before a
+byte was fetched, checked it against the signature-derived hashes, and Bazel fetched each package against the one
+for the host. So each module's rundir is given a `.terraform.lock.hcl` written from those hashes, and the warning
+goes with it.
 
-The document is a record rather than a constraint. Terraform can only verify a `zh:` hash against a zip, and a
-mirror hands it an extracted directory, so it takes the entries as given - the check that matters ran in the
-extension, as [above](#verified-hashes). It does append the `h1:` hash it computes for the running platform,
-which is why the file is copied into the rundir rather than symlinked from the build output.
+Both hash schemes go in, because terraform reads them in different places. A `zh:` value is the sha256 of a
+release zip - what the extension verified and what Bazel fetched against - but a mirror hands terraform an
+extracted directory, which it can only hash as `h1:`, so it takes the `zh:` entries as given. The `h1:` values
+are the ones it can check, and they come from the same
+[`providers lock` run](#how-it-runs) that produced the `zh:` ones. A document carrying both is left alone by
+`init`; one carrying only `zh:` gets the running platform's dirhash appended, and `init` then reports that it
+"has made some changes to the provider dependency selections recorded in the .terraform.lock.hcl file". Which is
+also why the file is copied into the rundir rather than symlinked: under `provider_verification = "off"` there
+are no dirhashes to write, and `init` still rewrites what it was given.
 
 Every platform's hash goes into each block, since `hashes` is a set terraform matches the installed package
 against: the members covering other platforms are what let one document serve every machine.
@@ -298,8 +310,11 @@ outright, so a source the mirror stocks at several versions has to be chosen bet
 
 That choice comes from the `providers` a module and its dependencies declare - the same declarations
 `versions.tf.json` is generated from - ANDed together the way terraform ANDs them across a configuration. A
-source the mirror stocks once needs no declaration and is always named. A source stocked several times over,
-whose declared constraints select none of them, is left out of the document entirely, so terraform reports the
-conflict against the whole configuration rather than against a version this picked for it.
+declared source the mirror stocks once needs no constraint and is always named. A source stocked several times
+over, whose declared constraints select none of them, is left out of the document entirely, so terraform reports
+the conflict against the whole configuration rather than against a version this picked for it.
 
-Providers a module does not use are harmless: `init` prunes them from the file it rewrites.
+Providers a module does not declare are left out too. A mirror is shared across a workspace, so it stocks
+providers any one module has nothing to do with - and `init` prunes a block the configuration does not require,
+rewriting the file to do it. That rewrite is the thing this document exists to avoid, so being stocked is not
+enough to be named.
