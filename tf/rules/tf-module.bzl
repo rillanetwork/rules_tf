@@ -207,11 +207,15 @@ def _tf_validate_impl(ctx):
     module = ctx.attr.module[TfModuleInfo]
     lock = declare_module_lock(ctx, module, tf_runtime)
 
-    cmd = "{install}{tf} -chdir={dir} init -backend=false -input=false -plugin-dir=$PWD/{plugins_mirror} > /dev/null; {tf} -chdir={dir} validate".format(
+    # A mirror holding nothing stages no directory, so there is no path to hand
+    # init: the flag is left off entirely rather than pointed somewhere absent.
+    plugin_dir = " -plugin-dir=$PWD/" + tf_runtime.mirror_path if tf_runtime.mirror_path else ""
+
+    cmd = "{install}{tf} -chdir={dir} init -backend=false -input=false{plugin_dir} > /dev/null; {tf} -chdir={dir} validate".format(
         install = install_module_lock(lock, ctx.attr.module.label.package),
         dir = ctx.attr.module.label.package,
         tf = tf_runtime.tf.short_path,
-        plugins_mirror = tf_runtime.mirror.short_path,
+        plugin_dir = plugin_dir,
     )
 
     ctx.actions.write(

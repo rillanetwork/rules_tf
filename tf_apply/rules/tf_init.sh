@@ -7,8 +7,15 @@ set -euo pipefail
 
 TF_BIN_PATH="${PWD}/%TF_BIN_PATH%"
 TF_DIR="%TF_DIR%"
-TF_PLUGINS_DIR="${PWD}/%TF_PLUGINS_DIR%"
+TF_PLUGINS_DIR="%TF_PLUGINS_DIR%"
 TF_LOCK_FILE="%TF_LOCK_FILE%"
+
+# Empty when the mirror holds no provider: nothing is staged for -plugin-dir to
+# name, so the flag is left off and init resolves against the registry instead.
+PLUGIN_DIR_FLAG=()
+if [ -n "$TF_PLUGINS_DIR" ]; then
+    PLUGIN_DIR_FLAG=(-plugin-dir="${PWD}/${TF_PLUGINS_DIR}")
+fi
 
 if [ -z "${BUILD_WORKSPACE_DIRECTORY:-}" ]; then
     echo "BUILD_WORKSPACE_DIRECTORY is not set. Please set it before running this script."
@@ -42,7 +49,7 @@ fi
 echo "Running 'terraform init' in directory: $PWD/$TF_DIR"
 
 # Run terraform init
-$TF_BIN_PATH -chdir="$TF_DIR" init -input=false -plugin-dir="$TF_PLUGINS_DIR" $@
+$TF_BIN_PATH -chdir="$TF_DIR" init -input=false "${PLUGIN_DIR_FLAG[@]}" $@
 
 # symlink the .terraform directory to the output directory
 ln -s  "$PWD/$TF_DIR/.terraform" "$OUT_DIR/.terraform"

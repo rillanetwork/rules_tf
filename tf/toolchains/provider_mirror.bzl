@@ -489,7 +489,9 @@ def download_providers(ctx, packages, os, arch):
       arch: host architecture, in terraform's spelling.
     """
     if len(packages) == 0:
-        ctx.file("mirror/.keep", content = "")
+        # No placeholder: the mirror is consumed as the files under it, so an
+        # empty one is genuinely no files, and the rules leave `-plugin-dir` off
+        # rather than name a directory holding nothing.
         return
 
     ctx.report_progress("Downloading %d provider(s) into mirror" % len(packages))

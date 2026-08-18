@@ -250,6 +250,23 @@ plugin into each module's `.terraform/providers/` rather than extracting a fresh
 The same source may appear at several versions; each is fetched independently, so they coexist in the mirror.
 Modules then select whichever version they require through their own `required_providers` block.
 
+### How the mirror reaches a rule
+
+The toolchain publishes the mirror as the individual files under it - a `mirror_files` filegroup - and never as
+the `mirror` directory itself. A source directory is a single opaque artifact that Bazel does not expand, so
+nothing in the build ever asks for the bytes inside it. That stays invisible until a repository declaring
+`reproducible = True` is restored from the repo contents cache rather than fetched: Bazel then materialises only
+what was actually demanded, the directory is not among it, and the `init` that reads the mirror by path at
+runtime finds an empty search location. Tracked files have somewhere concrete to come from, whether they arrive
+by lazy materialisation, remote execution or runfiles staging.
+
+A path is still what `-plugin-dir` needs, and no single file names the directory those files share, so
+`TfInfo.mirror_path` derives one from `mirror_versions.json`, which the download repository writes beside
+`mirror/`. It is runfiles-relative, because the scripts that consume it run from the runfiles root.
+
+A mirror holding no providers stages no `mirror/` directory at all. `TfInfo.mirror_path` is then the empty
+string and the rules leave `-plugin-dir` off, rather than hand `init` a search location that does not exist.
+
 ## The generated `.terraform.lock.hcl`
 
 A module initialised against an unpacked mirror has no lock file to read, so terraform hashes the packages it
