@@ -8,6 +8,7 @@ The helpers here read those hashes out of a lock file, produce them by running
 package's sha256 against them before the mirror is allowed to fetch it.
 """
 
+load(":checksums.bzl", "DEFAULT_ARCHIVE_TEMPLATE")
 load(":facts.bzl", "package_fact_key")
 
 # `providers lock` fetches a package per provider, so the ceiling is a download
@@ -156,12 +157,24 @@ def unverified_packages(facts, packages, platforms):
 
     return pending
 
-def fetch_lock_tool(ctx, tool, version, os, arch, url_template, sha256):
-    """Downloads the tf binary the extension verifies with, into its working directory.
+def fetch_lock_tool(
+        ctx,
+        tool,
+        version,
+        os,
+        arch,
+        url_template,
+        sha256,
+        archive_template = DEFAULT_ARCHIVE_TEMPLATE):
+    """Downloads a binary the extension verifies with, into its working directory.
 
     The archive is content-addressed by the sha256 already resolved for it, so
     the toolchain repository fetches the same URL later and finds it in
     `--repository_cache`.
+
+    Each release unpacks under its own name: one evaluation fetches terraform
+    to lock providers and tflint to check ruleset signatures, and several
+    download tags may ask for different versions of either.
 
     Args:
       ctx: the module extension's `module_ctx`.
@@ -171,25 +184,30 @@ def fetch_lock_tool(ctx, tool, version, os, arch, url_template, sha256):
       arch: the host architecture, in the release's spelling.
       url_template: release archive URL, taking `{version}` and `{file}`.
       sha256: the release archive's sha256, from `resolve_tool_sha256`.
+      archive_template: the archive's name as the release publishes it, taking
+        `{tool}`, `{version}`, `{os}` and `{arch}`. Stated by the caller for
+        the reason `resolve_tool_sha256` has it stated: the tools do not agree
+        on how an archive is named.
 
     Returns:
       The path of the extracted binary.
     """
-    file = "{tool}_{version}_{os}_{arch}.zip".format(
+    file = archive_template.format(
         tool = tool,
         version = version,
         os = os,
         arch = arch,
     )
+    output = "lock/{tool}_{version}".format(tool = tool, version = version)
 
     ctx.download_and_extract(
         url = url_template.format(version = version, file = file),
         sha256 = sha256,
         type = "zip",
-        output = "lock/tool",
+        output = output,
     )
 
-    return ctx.path("lock/tool/" + tool)
+    return ctx.path("%s/%s" % (output, tool))
 
 def lock_providers(ctx, tool, packages):
     """Runs `<tool> providers lock` over each package and returns the hashes it verified.

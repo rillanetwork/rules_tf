@@ -60,10 +60,12 @@ A declared ruleset is pinned the way a provider package is. The module extension
 "facts": {
   "@@rules_tf+//tf:extensions.bzl%tf_repositories": {
     "tflint_plugin/github.com/terraform-linters/tflint-ruleset-aws/0.48.0/darwin_arm64": {
-      "sha256": "..."
+      "sha256": "...",
+      "verified": true
     },
     "tflint_plugin/github.com/terraform-linters/tflint-ruleset-aws/0.48.0/linux_amd64": {
-      "sha256": "..."
+      "sha256": "...",
+      "verified": true
     }
   }
 }
@@ -80,11 +82,66 @@ from the repo contents cache instead of fetching it again.
 
 ## What the pin is worth
 
-A ruleset is pinned by a hash read from its release's `checksums.txt`. That is the release host's word, not a
-publisher's signature, which makes it weaker than the provider mirror's
-[verified hashes](mirror.md#verified-hashes) and weaker than the signature check `tflint --init` makes against a
-config's `signing_key`. Closing that gap is tracked in `TODO.md`.
+`verified` above says the sha256 next to it was read from a `checksums.txt` whose PGP signature tflint
+checked. That is the same standing the provider mirror's [verified hashes](mirror.md#verified-hashes) have, and
+it is what `tflint --init` gave before the rulesets were pinned: the key built into tflint for
+`terraform-linters` rulesets, or the `signing_key` the plugin block carries for anyone else's.
 
-In the meantime a compromised release would be caught only after the fact: once a hash is recorded, a later fetch
-of different bytes fails, so the exposure is to the first resolution rather than to every build. Reviewing the
-`tflint_plugin/` facts in a lockfile diff is worth the same attention as reviewing the `package/` ones.
+Making the check is the module extension's job, and it happens once, when a ruleset's facts are first minted.
+`--init` is run over the toolchain-wide config as written, which is what puts a `signing_key` in front of
+tflint. Exiting 0 is not taken as an answer on its own: `--init` verifies a copy of the document it fetched
+itself, so what ties that to the recorded hashes is the binary. The archive the recorded hash pins is fetched
+and unpacked, and it must hold the same binary `--init` installed; the recorded hashes are then checked against
+the signed document, every platform's and not just the host's. A hash the document contradicts fails the build
+rather than being quietly replaced.
+
+Thereafter the recorded mark answers the question, so a second evaluation runs no tflint and reaches no release.
+A lockfile written before this check existed carries no marks, and verifies once before settling.
+
+## Rulesets tflint cannot check
+
+tflint verifies against its own key only for rulesets under `terraform-linters`. Anyone else's needs a
+`signing_key` in the plugin block:
+
+```hcl
+plugin "custom" {
+  enabled = true
+  version = "1.2.3"
+  source  = "github.com/acme/tflint-ruleset-custom"
+
+  signing_key = <<-KEY
+  -----BEGIN PGP PUBLIC KEY BLOCK-----
+  ...
+  -----END PGP PUBLIC KEY BLOCK-----
+  KEY
+}
+```
+
+Without one, `tflint --init` installs the ruleset with a warning and still exits 0, so a build that treated that
+as verification would be recording a signature check nobody made. Such a ruleset fails instead, naming the
+block. Where the publisher's key genuinely is not to be had, `tflint_plugin_verification = "off"` on the
+`tf.download` tag admits rulesets on the release host's word and warns about each:
+
+```python
+tf.download(
+    version = "1.9.5",
+    tflint_config = "//terraform:tflint.hcl",
+    tflint_plugin_verification = "off",
+    mirror = [...],
+)
+```
+
+That leaves the pin worth what it was worth before: a compromised release is caught only after the fact, since
+once a hash is recorded a later fetch of different bytes fails. The exposure is to the first resolution rather
+than to every build, and reviewing the `tflint_plugin/` facts in a lockfile diff is worth the same attention as
+reviewing the `package/` ones.
+
+Rulesets a recorded mark already covers are unaffected by the setting: `off` narrows what must be checked, and
+never unmarks anything.
+
+## Failures are deferred
+
+A ruleset that cannot be resolved or cannot be verified fails the targets that lint, not the whole workspace.
+Extension evaluation is not lazy, so failing at resolution time would break every build in a repository,
+including ones that touch no terraform. The messages are carried into the tflint download repository instead and
+raised there, which is the first point a build has actually asked for tflint.
