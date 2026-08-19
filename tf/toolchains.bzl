@@ -164,7 +164,7 @@ tf_toolchains = repository_rule(
         ),
         "repo_hashes": attr.string_dict(
             doc = "Per-repo package hashes: repo name -> JSON of " +
-                  "'<host>/<ns>/<type>@<version>' -> comma-joined per-platform sha256.",
+                  "'<host>/<ns>/<type>@<version>' -> comma-joined, scheme-prefixed hashes.",
         ),
         "os": attr.string(mandatory = True),
         "arch": attr.string(mandatory = True),
