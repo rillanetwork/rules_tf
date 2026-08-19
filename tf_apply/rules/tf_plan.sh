@@ -7,7 +7,6 @@ set -euo pipefail
 
 TF_BIN_PATH="${PWD}/%TF_BIN_PATH%"
 TF_DIR="%TF_DIR%"
-TF_PLUGINS_DIR="${PWD}/%TF_PLUGINS_DIR%"
 TF_OUTPUT_JSON=%TF_OUTPUT_JSON%
 
 if [ -z "${BUILD_WORKSPACE_DIRECTORY:-}" ]; then
