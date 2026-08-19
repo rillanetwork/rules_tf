@@ -1,0 +1,42 @@
+load(":openpgp_test.bzl", "openpgp_test_suite")
+load(":sha2_test.bzl", "sha2_test_suite")
+
+package(default_applicable_licenses = ["//:license"])
+
+# Covers the primitives a signature check is built from, against published test
+# vectors and against real release signatures. None of it touches the network.
+sha2_test_suite()
+
+openpgp_test_suite()
+
+# The tests themselves are not distributed: they are the only .bzl files here
+# that a consumer never loads, and they depend on bazel_skylib's unittest.
+filegroup(
+    name = "standard_package",
+    srcs = [
+        "BUILD.bazel",
+    ] + glob(
+        ["*.bzl"],
+        exclude = ["*_test.bzl"],
+    ),
+    visibility = [
+        "//tf:__pkg__",
+    ],
+)
+
+exports_files(
+    glob(
+        ["*.bzl"],
+        exclude = ["*_test.bzl"],
+    ),
+    visibility = [
+        "//tf:__pkg__",
+    ],
+)
+
+filegroup(
+    name = "all_files",
+    testonly = True,
+    srcs = glob(["*"]),
+    visibility = ["//:__subpackages__"],
+)
