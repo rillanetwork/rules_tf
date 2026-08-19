@@ -67,14 +67,9 @@ def _parse_provider_locks_test_impl(ctx):
     # Every hash on the line is taken, and the block still closes.
     asserts.equals(env, ["dddd", "eeee"], sorted(locks["registry.terraform.io/hashicorp/tls@4.0.4"].keys()))
 
-    # h1: is kept out of the zh: table: it covers the extracted directory, not
-    # the package, and admitting it there would let a package match on a hash of
-    # something else.
     asserts.equals(env, ["aaaa", "bbbb"], sorted(locks["registry.terraform.io/hashicorp/null@3.1.1"].keys()))
     asserts.equals(env, ["cccc"], sorted(locks["registry.terraform.io/hashicorp/random@3.1.3"].keys()))
 
-    # It comes back in its own table instead, prefix stripped and however many
-    # a version carries -- the generated lock document is what wants them.
     asserts.equals(env, [
         "registry.terraform.io/hashicorp/null@3.1.1",
         "registry.terraform.io/hashicorp/random@3.1.3",
@@ -90,8 +85,6 @@ def _parse_provider_locks_test_impl(ctx):
         sorted(dirhashes["registry.terraform.io/hashicorp/random@3.1.3"].keys()),
     )
 
-    # A version whose block lists no h1: is absent rather than empty, so a
-    # caller cannot mistake "none recorded" for "recorded as none".
     asserts.false(env, "registry.terraform.io/hashicorp/tls@4.0.4" in dirhashes)
 
     return unittest.end(env)
@@ -105,8 +98,6 @@ def _collect_dirhashes_test_impl(ctx):
 
     _, dirhashes = parse_provider_locks([_LOCK_NULL, _LOCK_RANDOM, _LOCK_ONE_LINE])
 
-    # What an earlier evaluation recorded, as the fact holds it: comma-joined,
-    # since a fact value carries no lists.
     previous = {
         dirhash_fact_key(null["host"], null["namespace"], null["type"], null["version"]): {
             "hashes": "remembered=",
@@ -115,9 +106,6 @@ def _collect_dirhashes_test_impl(ctx):
 
     collected = collect_provider_dirhashes(previous, [null, random, tls], dirhashes)
 
-    # Remembered and discovered are unioned: a document covering one platform
-    # must not drop the hashes an earlier run learned for the others, or init
-    # goes back to appending its own.
     asserts.equals(
         env,
         ["71sNUDvmiJcijsvfXpiLCz0lXIBSsEJjMxljt7hxMhw=", "remembered="],
@@ -125,14 +113,8 @@ def _collect_dirhashes_test_impl(ctx):
     )
     asserts.equals(env, ["one=", "two="], collected["registry.terraform.io/hashicorp/random@3.1.3"])
 
-    # A package nothing knows a hash for is left out rather than failing: under
-    # provider_verification = "off" no dirhash is ever produced, and a supplied
-    # lock file typically covers one platform.
     asserts.false(env, "registry.terraform.io/hashicorp/tls@4.0.4" in collected)
 
-    # Nothing discovered this evaluation still yields what the facts hold, which
-    # is the settled path -- a second evaluation verifies nothing and must still
-    # render a complete document.
     asserts.equals(
         env,
         {"registry.terraform.io/hashicorp/null@3.1.1": ["remembered="]},

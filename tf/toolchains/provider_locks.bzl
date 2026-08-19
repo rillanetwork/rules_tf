@@ -254,9 +254,6 @@ def lock_providers(ctx, tool, packages, platforms):
         address = "%s/%s/%s" % (p["host"], p["namespace"], p["type"])
         workdir = "lock/%d" % index
 
-        # The platform count is in the message because it is the cost: one
-        # package download per platform, so a cold evaluation sits here for a
-        # while per provider.
         ctx.report_progress("Verifying %s %s (%d platforms)" % (
             address,
             p["version"],

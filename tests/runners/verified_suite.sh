@@ -35,10 +35,6 @@ bit::enter_scratch_dir
 echo "--- bazel test //... (resolving from the committed facts)"
 bit::bazel test //...
 
-# The generated lock file is only complete when it carries the h1: dirhashes,
-# which only a signature-verified mirror has. Incomplete, init rewrites the file
-# it was handed and says so -- so the message and the rewrite are both asserted
-# here, where the facts holding those hashes are committed.
 echo "--- bazel run root-mod-verified.init (the lock must survive it)"
 init_log="${TEST_TMPDIR}/init.log"
 bit::bazel run //tf/root-modules/root-mod-verified:root-mod-verified.init 2>&1 | tee "${init_log}"

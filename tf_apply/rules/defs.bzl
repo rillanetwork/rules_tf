@@ -177,8 +177,6 @@ def tf_init_impl(ctx):
     tf_toolchain = ctx.toolchains["//:tf_toolchain_type"]
     module = ctx.attr.module[TfModuleInfo]
 
-    # The lock file states what the mirror holds, so `init` neither recomputes
-    # the checksums nor warns that what it wrote covers one platform only.
     lock = declare_module_lock(ctx, module, tf_toolchain.runtime)
 
     init_script = ctx.actions.declare_file(ctx.label.name)

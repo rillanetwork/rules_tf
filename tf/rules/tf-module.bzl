@@ -35,9 +35,6 @@ def _module_impl(ctx):
         transitive = [dep[TfModuleInfo].transitive_srcs if TfModuleInfo in dep else dep.files for dep in ctx.attr.deps],
     )
 
-    # A child module declares providers of its own, and `init` resolves the
-    # whole tree at once, so the version a lock file may name has to satisfy
-    # every module that asks for the provider -- not just this one.
     all_providers = depset(
         [ctx.attr.providers_json] if ctx.attr.providers_json else [],
         transitive = [
