@@ -257,8 +257,6 @@ def resolve_providers(ctx, entries, default_host, os, arch, facts):
             "is_exact": entry["is_exact"],
         }
 
-        # Remembered against the spec as written: that is the question whose
-        # answer is being recorded. Exact pins ask nothing.
         if not t["is_exact"]:
             t["spec"] = entry["version"]
             remembered = facts.get(resolve_fact_key(host, namespace, provider_type, t["spec"]))
@@ -268,17 +266,12 @@ def resolve_providers(ctx, entries, default_host, os, arch, facts):
 
         targets.append(t)
 
-    # Service discovery blocks every registry URL and is memoized per host, so
-    # resolve it up front -- but only for targets that still have a question.
     for t in targets:
         if not t["is_exact"]:
             t["base"] = providers_base_url(client, t["host"])
 
     targets = _resolve_constraints(ctx, client, targets)
 
-    # Before the dedupe below, never after: two constraints can select the same
-    # version, and the one that collapses would be left with no fact of its own
-    # -- a lockfile that looks complete while that spec re-resolves every time.
     spec_facts = {}
     for t in targets:
         spec = t.get("spec")
@@ -295,10 +288,6 @@ def resolve_providers(ctx, entries, default_host, os, arch, facts):
 
     platform = "%s_%s" % (os, arch)
 
-    # Every platform, not just the host, so the lockfile a build writes is
-    # complete whichever machine wrote it. Host-only would leave the others to
-    # append their facts later, dirtying the lockfile on the next machine to
-    # build -- enough to fail a CI job that gates on a clean tree.
     wanted_platforms = list(MIRROR_PLATFORMS)
     if platform not in wanted_platforms:
         wanted_platforms.append(platform)
@@ -319,10 +308,6 @@ def resolve_providers(ctx, entries, default_host, os, arch, facts):
             else:
                 requests.append({"target": t, "platform": p})
 
-    # An unknown API base needs service discovery, which costs a round trip and
-    # can fail. Worth it for the host platform, whose package is about to be
-    # fetched; for the others it only costs the lockfile some completeness. This
-    # is what lets a workspace resolve from facts alone against a dead registry.
     for r in requests:
         t = r["target"]
         if r["platform"] == platform and not t.get("base"):
@@ -352,9 +337,6 @@ def resolve_providers(ctx, entries, default_host, os, arch, facts):
             arch = p_arch,
         )
 
-        # The metadata JSON is not content-addressable, so this small fetch is
-        # live the first time; thereafter the fact answers it. Each lands in its
-        # own path to avoid collisions between versions or platforms.
         r["file"] = "provider_meta_{host}_{ns}_{type}_{version}_{platform}.json".format(
             host = t["host"].replace(".", "_").replace(":", "_"),
             ns = t["namespace"],
@@ -377,8 +359,6 @@ def resolve_providers(ctx, entries, default_host, os, arch, facts):
         t = r["target"]
         p = r["platform"]
 
-        # Only the host platform's metadata is required. A provider shipping no
-        # package for one of the others simply goes unrecorded.
         if not r["pending"].wait().success:
             if p != platform:
                 continue
@@ -405,16 +385,11 @@ def resolve_providers(ctx, entries, default_host, os, arch, facts):
             ))
             continue
 
-        # Resolved before it is recorded: the download repository never saw the
-        # metadata request a relative URL would be relative to.
         t["metas"][p] = {
             "download_url": resolve_url(r["url"], meta["download_url"]),
             "sha256": meta["shasum"],
         }
 
-    # Built fresh rather than merged: `module_ctx.facts` is a lookup, not an
-    # iterable. The persisted facts therefore track the manifest exactly -- an
-    # entry dropped from the mirror takes its facts with it.
     new_facts = dict(spec_facts)
     packages = []
     for t in targets:
@@ -441,12 +416,6 @@ def resolve_providers(ctx, entries, default_host, os, arch, facts):
             "version": t["version"],
             "download_url": t["metas"][platform]["download_url"],
             "sha256": t["metas"][platform]["sha256"],
-            # Every platform's package hash, not just the host's: these are
-            # what a module's generated `.terraform.lock.hcl` records, and a
-            # lock file covering one platform is the thing terraform warns
-            # about. Scheme-prefixed as a lock document spells them, so the
-            # `h1:` dirhashes the verification pass captures ride the same
-            # channel and the renderer emits what it is given.
             "hashes": sorted({"zh:" + meta["sha256"]: True for meta in t["metas"].values()}),
         })
 
@@ -477,9 +446,6 @@ def download_providers(ctx, packages, os, arch):
 
     ctx.report_progress("Downloading %d provider(s) into mirror" % len(packages))
 
-    # Built solely for the credential lookup: a package served by the registry
-    # host itself may need a token, which cannot travel as an attribute without
-    # the lockfile recording it.
     client = new_registry_client(ctx)
 
     staged = []
@@ -491,10 +457,6 @@ def download_providers(ctx, packages, os, arch):
         if url_host(p["download_url"]) == p["host"]:
             package_headers = auth_headers(client, p["host"])
 
-        # download + extract rather than download_and_extract: only `download`
-        # accepts block = False, and putting every package in flight at once is
-        # worth staging the zip. Host-qualified because two registries may serve
-        # the same coordinate, and both are fetched concurrently.
         archive = "provider_pkg_{host}_{ns}_{type}_{version}.zip".format(
             host = p["host"].replace(".", "_").replace(":", "_"),
             ns = p["namespace"],

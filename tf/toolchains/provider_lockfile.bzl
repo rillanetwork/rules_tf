@@ -111,15 +111,10 @@ def _satisfying_version(versions, specs):
       The highest satisfying version, or "" when none satisfies.
     """
 
-    # Comma-joined is terraform's own spelling of AND, and what
-    # `parse_version_constraint` reads.
     version = select_matching_version(versions, ", ".join(specs))
     if version:
         return version
 
-    # A prerelease is never selected by a constraint, in terraform or in the
-    # solver above -- naming one takes an exact pin, so an exact pin is what is
-    # looked for here.
     pins = [
         spec.strip()[1:].strip() if spec.strip().startswith("=") else spec.strip()
         for spec in specs

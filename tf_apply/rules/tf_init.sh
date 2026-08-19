@@ -31,9 +31,6 @@ rm -rf "$PWD/$TF_DIR/.terraform.lock.hcl"
 rm -rf "$OUT_DIR/.terraform"
 rm -rf "$OUT_DIR/.terraform.lock.hcl"
 
-# Copied rather than symlinked: init rewrites the lock in place, appending the
-# h1: hash it computes for the running platform, and through a runfiles symlink
-# that write would land on the build output itself.
 if [ -n "$TF_LOCK_FILE" ]; then
     cp -f "$TF_LOCK_FILE" "$PWD/$TF_DIR/.terraform.lock.hcl"
     chmod u+w "$PWD/$TF_DIR/.terraform.lock.hcl"
