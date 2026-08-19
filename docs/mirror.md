@@ -249,3 +249,5 @@ plugin into each module's `.terraform/providers/` rather than extracting a fresh
 
 The same source may appear at several versions; each is fetched independently, so they coexist in the mirror.
 Modules then select whichever version they require through their own `required_providers` block.
+
+When nothing is mirrored, `init` is run without `-plugin-dir` and resolves providers against the registry.

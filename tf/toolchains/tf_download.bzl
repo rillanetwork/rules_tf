@@ -113,7 +113,8 @@ _DECLARE_TOOLCHAIN_CHUNK = """
 tf_toolchain(
    name = "{toolchain_repo}_toolchain_impl",
    tf = "@{toolchain_repo}//:runtime",
-   mirror = "@{toolchain_repo}//:mirror",
+   mirror_files = "@{toolchain_repo}//:mirror_files",
+   mirror_versions_json = "@{toolchain_repo}//:mirror_versions.json",
    mirror_versions = {mirror_versions},
    default_registry = "{default_registry}",
 )
