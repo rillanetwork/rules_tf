@@ -108,10 +108,13 @@ The archive is fetched against a sha256 the signed document vouches for, so a
 signature covers every platform's archive by covering the document. What remains
 outstanding is narrower:
 
-- tflint's `checksums.txt` is signed with cosign keyless, which needs a
-  different verifier than the one here: Fulcio chain validation and a pinned
-  certificate identity, not an RSA check. Until that lands its release is
-  pinned on the release host's word.
+- tflint's `checksums.txt` is signed with cosign keyless rather than with
+  OpenPGP, and is deliberately left unverified. cosign is the only practical
+  verifier of it and every published binary is 130-150 MB; worse, a Fulcio
+  certificate is valid for ten minutes, so establishing the signing time
+  requires an online Rekor lookup that cannot be skipped. Checking a 712-byte
+  document is not worth a 140 MB download and a build-time dependency on
+  rekor.sigstore.dev. `TODO.md` records the full finding.
 - terraform-docs publishes no signature in any scheme, so nothing can verify it
   and no setting pretends otherwise.
 - Provider packages are a separate mechanism with its own trust root, described
