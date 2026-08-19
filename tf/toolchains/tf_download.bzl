@@ -88,7 +88,6 @@ def tf_download_impl(ctx, tool, build_tpl, url_template):
     packages = json.decode(ctx.attr.providers_json)
     download_providers(ctx, packages, ctx.attr.os, ctx.attr.arch)
 
-    # The manifest as it actually landed, for a build to inspect.
     ctx.file(
         "mirror_versions.json",
         content = json.encode(mirror_manifest(packages)),

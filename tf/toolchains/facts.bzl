@@ -119,9 +119,6 @@ def tflint_plugin_fact_key(source, version, platform):
         platform = platform,
     )
 
-# The platforms every resolution records coordinates for, so one lockfile serves
-# every machine in a team. Enumerated rather than discovered because
-# `module_ctx.facts` is a lookup with no iteration.
 MIRROR_PLATFORMS = [
     "linux_amd64",
     "linux_arm64",
