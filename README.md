@@ -114,6 +114,12 @@ that verified against the signing keys compiled into the terraform binary; the r
 `MODULE.bazel.lock`, so later builds read a pin a publisher signed. `provider_locks` accepts a
 `.terraform.lock.hcl` instead. See [docs/mirror.md](docs/mirror.md#verified-hashes).
 
+The tool archives are pinned the same way. terraform and tofu both sign the checksum document their release
+hash is read from, and that signature is verified - in Starlark, against keys vendored in the ruleset, with no
+`gpg` on the host involved - before any hash is taken from it. tflint and terraform-docs publish no OpenPGP
+signature, so both warn once and are pinned on the release host's word. See
+[docs/signatures.md](docs/signatures.md).
+
 ### Custom and private registries
 
 Mirror entries may name a registry host other than the default (`registry.terraform.io`, or

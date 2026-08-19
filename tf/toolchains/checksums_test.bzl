@@ -9,7 +9,8 @@ in the document" rather than as a typo.
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
 load("//tf/toolchains/tfdoc:toolchain.bzl", TFDOC_ARCHIVE_TEMPLATE = "ARCHIVE_TEMPLATE")
 load("//tf/toolchains/tflint:toolchain.bzl", TFLINT_ARCHIVE_TEMPLATE = "ARCHIVE_TEMPLATE")
-load(":checksums.bzl", "DEFAULT_ARCHIVE_TEMPLATE", "get_sha256sum")
+load(":checksums.bzl", "DEFAULT_ARCHIVE_TEMPLATE", "get_sha256sum", "resolve_tool_sha256")
+load(":facts.bzl", "tool_fact_key")
 
 _TERRAFORM_SHA256SUMS = """
 b8cf184dee15dfa89713fe56085313ab23db22e17f26d47fdb0af5f4d5e8ff4e  terraform_1.9.8_darwin_amd64.zip
@@ -106,7 +107,106 @@ def _suffix_ambiguity_test_impl(ctx):
 
     return unittest.end(env)
 
+def _settled_facts_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # A remembered hash a signature covered answers the question outright, with
+    # no network involved. Passing None for the module_ctx is the assertion: any
+    # fetch at all would fail on it.
+    remembered = {
+        tool_fact_key("terraform", "1.9.5", "darwin_arm64"): {
+            "sha256": "b7eca5cd6f0f6644d45d8708c1b864e64a9e26c355d2c9b585faa049f640fe71",
+            "verified": True,
+        },
+    }
+
+    resolved = resolve_tool_sha256(
+        None,
+        "terraform",
+        "1.9.5",
+        "darwin",
+        "arm64",
+        remembered,
+        "https://example.invalid/{version}/SHA256SUMS",
+        signature_template = "https://example.invalid/{version}/SHA256SUMS.sig",
+    )
+
+    asserts.equals(
+        env,
+        "b7eca5cd6f0f6644d45d8708c1b864e64a9e26c355d2c9b585faa049f640fe71",
+        resolved.sha256,
+    )
+    asserts.equals(env, None, resolved.error)
+    asserts.true(env, resolved.verified, "a recorded mark should settle the release")
+    asserts.false(env, resolved.minted, "nothing should be resolved afresh")
+
+    return unittest.end(env)
+
+def _unsigned_tool_settles_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # A tool whose publisher signs nothing has no mark to record, so an
+    # unmarked hash still settles rather than being re-fetched forever. Without
+    # this, tflint and terraform-docs would refetch their checksum documents on
+    # every evaluation in pursuit of a signature that does not exist.
+    remembered = {
+        tool_fact_key("tflint", "0.53.0", "darwin_arm64"): {
+            "sha256": "2ba8eefe6cbd5d34e5a0589a8897646e4da44c48f4c2fd9a77581d1e2b03bff8",
+        },
+    }
+
+    resolved = resolve_tool_sha256(
+        None,
+        "tflint",
+        "0.53.0",
+        "darwin",
+        "arm64",
+        remembered,
+        "https://example.invalid/{version}/checksums.txt",
+    )
+
+    asserts.equals(
+        env,
+        "2ba8eefe6cbd5d34e5a0589a8897646e4da44c48f4c2fd9a77581d1e2b03bff8",
+        resolved.sha256,
+    )
+    asserts.false(env, resolved.verified, "no signature covers a tflint release")
+    asserts.false(env, resolved.minted, "an unsigned tool still settles")
+
+    return unittest.end(env)
+
+def _verification_off_settles_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # Under "off" an unmarked hash settles even for a tool that does publish a
+    # signature, since no check is going to be made of it.
+    remembered = {
+        tool_fact_key("terraform", "1.9.5", "darwin_arm64"): {
+            "sha256": "b7eca5cd6f0f6644d45d8708c1b864e64a9e26c355d2c9b585faa049f640fe71",
+        },
+    }
+
+    resolved = resolve_tool_sha256(
+        None,
+        "terraform",
+        "1.9.5",
+        "darwin",
+        "arm64",
+        remembered,
+        "https://example.invalid/{version}/SHA256SUMS",
+        signature_template = "https://example.invalid/{version}/SHA256SUMS.sig",
+        verification = "off",
+    )
+
+    asserts.false(env, resolved.verified, "nothing was checked, so nothing is claimed")
+    asserts.false(env, resolved.minted, "\"off\" should not re-resolve a recorded hash")
+
+    return unittest.end(env)
+
 _archive_naming_test = unittest.make(_archive_naming_test_impl)
+_settled_facts_test = unittest.make(_settled_facts_test_impl)
+_unsigned_tool_settles_test = unittest.make(_unsigned_tool_settles_test_impl)
+_verification_off_settles_test = unittest.make(_verification_off_settles_test_impl)
 _lookup_test = unittest.make(_lookup_test_impl)
 _suffix_ambiguity_test = unittest.make(_suffix_ambiguity_test_impl)
 
@@ -117,4 +217,7 @@ def checksums_test_suite():
         _archive_naming_test,
         _lookup_test,
         _suffix_ambiguity_test,
+        _settled_facts_test,
+        _unsigned_tool_settles_test,
+        _verification_off_settles_test,
     )

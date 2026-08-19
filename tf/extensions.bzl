@@ -2,7 +2,7 @@
 
 load("@rules_tf//tf:toolchains.bzl", "tf_toolchains")
 load("@rules_tf//tf:versions.bzl", "TFDOC_VERSION", "TFLINT_VERSION")
-load("@rules_tf//tf/toolchains:checksums.bzl", "resolve_tool_sha256")
+load("@rules_tf//tf/toolchains:checksums.bzl", "resolve_tool_sha256", "warn_unsigned_tool")
 load("@rules_tf//tf/toolchains:facts.bzl", "MIRROR_PLATFORMS")
 load(
     "@rules_tf//tf/toolchains:provider_locks.bzl",
@@ -24,6 +24,7 @@ load(
     "@rules_tf//tf/toolchains/terraform:toolchain.bzl",
     "terraform_download",
     TERRAFORM_SHA256SUMS_TEMPLATE = "SHA256SUMS_TEMPLATE",
+    TERRAFORM_SIGNATURE_TEMPLATE = "SIGNATURE_TEMPLATE",
     TERRAFORM_URL_TEMPLATE = "URL_TEMPLATE",
 )
 load(
@@ -51,6 +52,7 @@ load(
     "@rules_tf//tf/toolchains/tofu:toolchain.bzl",
     "tofu_download",
     TOFU_SHA256SUMS_TEMPLATE = "SHA256SUMS_TEMPLATE",
+    TOFU_SIGNATURE_TEMPLATE = "SIGNATURE_TEMPLATE",
     TOFU_URL_TEMPLATE = "URL_TEMPLATE",
 )
 
@@ -130,7 +132,9 @@ def _tf_repositories(ctx):
             # reason the tf tool archive is: every byte that repository fetches
             # is then pinned by an attribute, which is what lets it declare
             # itself reproducible and be served from the repo contents cache.
-            tfdoc_sha256, tfdoc_facts, tfdoc_error = resolve_tool_sha256(
+            # terraform-docs publishes no signature of any kind, so there is
+            # nothing to pass here and nothing a setting could change.
+            tfdoc_resolved = resolve_tool_sha256(
                 ctx,
                 "terraform-docs",
                 version_tag.tfdoc_version,
@@ -140,7 +144,11 @@ def _tf_repositories(ctx):
                 TFDOC_SHA256SUMS_TEMPLATE,
                 archive_template = TFDOC_ARCHIVE_TEMPLATE,
             )
-            facts.update(tfdoc_facts)
+            facts.update(tfdoc_resolved.facts)
+            tfdoc_sha256 = tfdoc_resolved.sha256
+            tfdoc_error = tfdoc_resolved.error
+            if tfdoc_resolved.minted and not tfdoc_resolved.verified:
+                warn_unsigned_tool("terraform-docs", version_tag.tfdoc_version)
 
             tfdoc_download(
                 name = tfdoc_repo_name,
@@ -159,7 +167,10 @@ def _tf_repositories(ctx):
                 suffix = "_{}_{}".format(host_detected_os, host_detected_arch),
             )
 
-            tflint_sha256, tflint_facts, tflint_error = resolve_tool_sha256(
+            # tflint signs its checksums.txt with cosign keyless rather than
+            # with OpenPGP, so this pin is the release host's word. Checking it
+            # needs a different verifier than the one here.
+            tflint_resolved = resolve_tool_sha256(
                 ctx,
                 "tflint",
                 version_tag.tflint_version,
@@ -169,8 +180,11 @@ def _tf_repositories(ctx):
                 TFLINT_SHA256SUMS_TEMPLATE,
                 archive_template = TFLINT_ARCHIVE_TEMPLATE,
             )
-            facts.update(tflint_facts)
-            tflint_errors = [tflint_error] if tflint_error else []
+            facts.update(tflint_resolved.facts)
+            tflint_sha256 = tflint_resolved.sha256
+            if tflint_resolved.minted and not tflint_resolved.verified:
+                warn_unsigned_tool("tflint", version_tag.tflint_version)
+            tflint_errors = [tflint_resolved.error] if tflint_resolved.error else []
 
             # The config is read here as well as templated into the download
             # repository: the rulesets it declares are what the extension has to
@@ -264,7 +278,7 @@ def _tf_repositories(ctx):
             # what lets it be served from the repo contents cache. The same
             # hash pins the binary the verification below runs.
             tool = "tofu" if version_tag.use_tofu else "terraform"
-            tool_sha256, tool_facts, tool_error = resolve_tool_sha256(
+            tool_resolved = resolve_tool_sha256(
                 ctx,
                 tool,
                 version_tag.version,
@@ -272,10 +286,17 @@ def _tf_repositories(ctx):
                 host_detected_arch,
                 ctx.facts,
                 TOFU_SHA256SUMS_TEMPLATE if version_tag.use_tofu else TERRAFORM_SHA256SUMS_TEMPLATE,
+                signature_template = (
+                    TOFU_SIGNATURE_TEMPLATE if version_tag.use_tofu else TERRAFORM_SIGNATURE_TEMPLATE
+                ),
+                verification = version_tag.tool_verification,
             )
-            facts.update(tool_facts)
-            if tool_error:
-                resolve_errors.append(tool_error)
+            facts.update(tool_resolved.facts)
+            tool_sha256 = tool_resolved.sha256
+            if tool_resolved.error:
+                resolve_errors.append(tool_resolved.error)
+            elif tool_resolved.minted and not tool_resolved.verified:
+                warn_unsigned_tool(tool, version_tag.version)
 
             # Every package hash is known before a byte is fetched, so the
             # signature-derived check runs here, against hashes a publisher
@@ -390,6 +411,20 @@ _version_tag = tag_class(
                   "rulesets on the release host's word, warning about each, which is what a " +
                   "config with no key to hand leaves available. Rulesets a recorded mark " +
                   "covers are as verified as under 'auto', silently.",
+        ),
+        "tool_verification": attr.string(
+            default = "auto",
+            values = ["auto", "off"],
+            doc = "Whether each tool release must be pinned by a hash a publisher signed. " +
+                  "'auto' trusts the verified marks already recorded in MODULE.bazel.lock and " +
+                  "checks the detached OpenPGP signature over the checksum document for what " +
+                  "they leave: that needs network access, runs once per release, and is " +
+                  "answered from the lockfile thereafter. A document whose signature does not " +
+                  "verify fails, and no hash is recorded from it. terraform and tofu are what " +
+                  "this covers; tflint signs only with cosign keyless and terraform-docs " +
+                  "publishes nothing, so both warn under either setting. 'off' admits every " +
+                  "release on the release host's word without fetching a signature. Releases a " +
+                  "recorded mark covers are as verified as under 'auto', silently.",
         ),
         "tfdoc_version": attr.string(default = TFDOC_VERSION),
         "mirror": attr.string_list(

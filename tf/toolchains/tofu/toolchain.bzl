@@ -13,6 +13,13 @@ load(
 URL_TEMPLATE = "https://github.com/opentofu/opentofu/releases/download/v{version}/{file}"
 SHA256SUMS_TEMPLATE = "https://github.com/opentofu/opentofu/releases/download/v{version}/tofu_{version}_SHA256SUMS"
 
+# OpenTofu publishes two signatures over the checksum document and they are not
+# alternatives: `.gpgsig` is the OpenPGP one, made with the release key
+# E3E6E43D84CB852EADB0051D0C0AF313E5FD9F80, while the `.sig` and `.pem` pair
+# next to it is a cosign keyless bundle, which is a different scheme and not
+# what this checks.
+SIGNATURE_TEMPLATE = SHA256SUMS_TEMPLATE + ".gpgsig"
+
 def _download_impl(ctx):
     return tf_download_impl(
         ctx,
