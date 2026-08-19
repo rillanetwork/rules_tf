@@ -152,7 +152,7 @@ def tf_init_impl(ctx):
         substitutions = {
             "%TF_BIN_PATH%": tf_toolchain.runtime.tf.short_path,
             "%TF_DIR%": ctx.attr.module.label.package,
-            "%TF_PLUGINS_DIR%": tf_toolchain.runtime.mirror.short_path,
+            "%TF_PLUGINS_DIR%": tf_toolchain.runtime.mirror_path,
         },
     )
 
