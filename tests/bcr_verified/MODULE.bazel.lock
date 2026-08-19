@@ -471,6 +471,18 @@
   },
   "facts": {
     "@@rules_tf+//tf:extensions.bzl%tf_repositories": {
+      "h1/registry.terraform.io/hashicorp/null/3.1.1": {
+        "hashes": "71sNUDvmiJcijsvfXpiLCz0lXIBSsEJjMxljt7hxMhw=,Pctug/s/2Hg5FJqjYcTM0kPyx3AoYK1MpRWO0T9V2ns=,YvH6gTaQzGdNv+SKTZujU1O0bO+Pw6vJHOPhqgN8XNs=,ZD4wyZ0KJzt5s2mD0xD7paJlVONNicLvZKdgtezz02I="
+      },
+      "h1/registry.terraform.io/hashicorp/random/3.1.3": {
+        "hashes": "7+wnAXQM7IpNEAQ6WZXdO0ZfQW/ncQFXYJ5T2KaR+Z8=,KkBerDx4KhflLuwYJ/dl3zOTBY0qi4sdTj4nvwPIS7g=,LPSVX+oXKGaZmxgtaPf2USxoEsWK/pnhmm/5FKw+PtU=,nLWniS8xhb32qRQy+n4bDPjQ7YWZPVMR3v1vSrx7QyY="
+      },
+      "h1/registry.terraform.io/hashicorp/random/3.3.2": {
+        "hashes": "BgC3HcQhraeo8opJqoLm07Jcs4otOu2XrY2ppVeRMpg=,Fu0IKMy46WsO5Y6KfuH9IFkkuxZjE/gIcgtB7GWkTtc=,H5V+7iXol/EHB2+BUMzGlpIiCOdV74H8YjzCxnSAWcg=,YChjos7Hrvr2KgTc9GzQ+de/QE2VLAeRJgxFemnCltU="
+      },
+      "h1/registry.terraform.io/hashicorp/tls/4.0.4": {
+        "hashes": "GZcFizg5ZT2VrpwvxGBHQ/hO9r6g0vYdQqx3bFD3anY=,Wd3RqmQW60k2QWPN4sK5CtjGuO1d+CRNXgC+D4rKtXc=,bNsvpX5EGuVxgGRXBQVLXlmq40PdoLp8Rfuh1ZmV7yY=,pe9vq86dZZKCm+8k1RhzARwENslF3SXb9ErHbQfgjXU="
+      },
       "package/registry.terraform.io/hashicorp/null/3.1.1/darwin_amd64": {
         "download_url": "https://releases.hashicorp.com/terraform-provider-null/3.1.1/terraform-provider-null_3.1.1_darwin_amd64.zip",
         "sha256": "b21b78ca581f98f4cdb7a366b03ae9db23a73dfa7df12c533d7c19b68e9e72e5",

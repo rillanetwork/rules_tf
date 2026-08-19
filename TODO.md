@@ -1,4 +1,3 @@
 # TODO
 
 - Make the release process update the version in the README's Getting Started snippet. It hardcodes `bazel_dep(name = "rules_tf", version = "1.0.0")` (README.md:27), so every release leaves it stale: it still says 1.0.0 after v2.0.0. Either bump it in a pre-tag step, or have the release workflow rewrite and commit it.
-- Capture the `h1:` hashes `terraform providers lock -platform=...` emits, alongside the `zh:` ones, so the generated `.terraform.lock.hcl` is complete for every platform. Without them `init` appends the `h1:` it computes for the running platform and reports "Terraform has made some changes to the provider dependency selections", which is noise on the `tf_root_module` init path. Costs one package download per platform per provider version, in the extension, on the pass that already runs the tool.

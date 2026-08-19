@@ -61,8 +61,9 @@ tf_toolchain = rule(
         ),
         "mirror_hashes": attr.string_dict(
             doc = "Package hashes per mirrored provider: '<host>/<ns>/<type>@<version>' -> the " +
-                  "comma-joined sha256 of its package on each platform the extension resolved. " +
-                  "What a module's generated .terraform.lock.hcl is written from.",
+                  "comma-joined, scheme-prefixed hashes the extension resolved for it -- a 'zh:' " +
+                  "package sha256 per platform, plus any 'h1:' dirhash the verification pass " +
+                  "captured. What a module's generated .terraform.lock.hcl is written from.",
         ),
         "default_registry": attr.string(
             doc = "Registry host an unqualified mirror source resolves against, so a rule can " +

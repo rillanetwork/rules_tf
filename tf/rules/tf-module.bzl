@@ -183,9 +183,10 @@ def declare_module_lock(ctx, module, tf_runtime):
 def install_module_lock(lock, module_dir):
     """The shell prefix placing a generated lock file in the module's rundir.
 
-    Copied rather than symlinked: `init` rewrites the lock in place (it appends
-    the `h1:` hash it computes for the running platform), which through a
-    runfiles symlink would land on the build output itself.
+    Copied rather than symlinked: `init` rewrites the lock in place whenever the
+    document is incomplete -- appending the `h1:` dirhash it computes for the
+    running platform, which is absent when nothing signature-verified the mirror
+    -- and through a runfiles symlink that would land on the build output.
 
     Args:
       lock: the generated lock file, or None.
