@@ -35,6 +35,34 @@ bit::enter_scratch_dir
 echo "--- bazel test //... (resolving from the committed facts)"
 bit::bazel test //...
 
+# The generated lock file is only complete when it carries the h1: dirhashes,
+# which only a signature-verified mirror has. Incomplete, init rewrites the file
+# it was handed and says so -- so the message and the rewrite are both asserted
+# here, where the facts holding those hashes are committed.
+echo "--- bazel run root-mod-verified.init (the lock must survive it)"
+init_log="${TEST_TMPDIR}/init.log"
+bit::bazel run //tf/root-modules/root-mod-verified:root-mod-verified.init 2>&1 | tee "${init_log}"
+
+if grep -q "made some changes to the provider dependency selections" "${init_log}"; then
+  echo >&2 ""
+  echo >&2 "terraform rewrote the generated .terraform.lock.hcl during init. It does"
+  echo >&2 "that when the document is incomplete: h1: hashes missing for the platform"
+  echo >&2 "it ran on, or a provider named that the configuration does not require."
+  exit 1
+fi
+
+bazel_bin="$(bit::bazel info bazel-bin)"
+module_bin="${bazel_bin}/tf/root-modules/root-mod-verified"
+if ! diff -u \
+  "${module_bin}/root-mod-verified.init.terraform.lock.hcl" \
+  "${module_bin}/root-mod-verified.init.runfiles/_main/tf/root-modules/root-mod-verified/.terraform.lock.hcl"; then
+  echo >&2 ""
+  echo >&2 "init left the rundir's .terraform.lock.hcl different from the generated"
+  echo >&2 "one, above. The generated document is meant to be what terraform would"
+  echo >&2 "have written itself."
+  exit 1
+fi
+
 echo "--- discarding the committed facts"
 python3 - <<'PY'
 import json

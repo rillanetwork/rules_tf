@@ -3,12 +3,14 @@
 load("@rules_tf//tf:toolchains.bzl", "tf_toolchains")
 load("@rules_tf//tf:versions.bzl", "TFDOC_VERSION", "TFLINT_VERSION")
 load("@rules_tf//tf/toolchains:checksums.bzl", "resolve_tool_sha256")
-load("@rules_tf//tf/toolchains:facts.bzl", "MIRROR_PLATFORMS")
+load("@rules_tf//tf/toolchains:facts.bzl", "MIRROR_PLATFORMS", "dirhash_fact_key")
 load(
     "@rules_tf//tf/toolchains:provider_locks.bzl",
+    "collect_provider_dirhashes",
     "enforce_lock_coverage",
     "fetch_lock_tool",
     "lock_providers",
+    "merge_provider_locks",
     "parse_provider_locks",
     "unverified_packages",
     "verify_provider_hashes",
@@ -73,8 +75,7 @@ def _repo_name(*, module, tool, index, suffix = ""):
 def _tf_repositories(ctx):
     host_detected_os, host_detected_arch = detect_host_platform(ctx)
 
-    # Coordinates are resolved for every platform a toolchain runs on, plus the
-    # host when it is something else again.
+    # Every platform a toolchain runs on, plus the host when it is another again.
     host_platform = "%s_%s" % (host_detected_os, host_detected_arch)
     platforms = MIRROR_PLATFORMS + [
         p
@@ -89,8 +90,8 @@ def _tf_repositories(ctx):
     repo_mirrors = {}
     repo_hashes = {}
 
-    # Accumulated across every download tag and handed back at the end, for
-    # bzlmod to persist in MODULE.bazel.lock.
+    # Accumulated across every download tag, for bzlmod to persist in
+    # MODULE.bazel.lock.
     facts = {}
 
     for module in ctx.modules:
@@ -139,9 +140,8 @@ def _tf_repositories(ctx):
             if mirror == None:
                 fail("module {} is missing both mirror and mirror_json attributes; one must be set".format(module.name))
 
-            # The coordinates below reach the repo rule as attributes;
-            # everything learned from the registry comes back as facts, which
-            # are what the lockfile records.
+            # Coordinates reach the repo rule as attributes; everything learned
+            # from the registry comes back as facts, which the lockfile records.
             packages, tag_facts, resolve_errors = resolve_providers(
                 ctx,
                 parse_mirror_entries(mirror),
@@ -153,8 +153,7 @@ def _tf_repositories(ctx):
             facts.update(tag_facts)
 
             # Resolved here rather than in the download repository so that every
-            # byte that repository fetches is pinned by an attribute, which is
-            # what lets it be served from the repo contents cache. The same
+            # byte that repository fetches is pinned by an attribute. The same
             # hash pins the binary the verification below runs.
             tool = "tofu" if version_tag.use_tofu else "terraform"
             tool_sha256, tool_facts, tool_error = resolve_tool_sha256(
@@ -171,43 +170,42 @@ def _tf_repositories(ctx):
                 resolve_errors.append(tool_error)
 
             # Every package hash is known before a byte is fetched, so the
-            # signature-derived check runs here, against hashes a publisher
-            # signed. "files" trusts no verified mark recorded in the
-            # lockfile: it checks every package on every evaluation, a
-            # standing assertion that the supplied locks cover the whole
-            # mirror, however past evaluations were configured. The other
-            # modes treat a mark as settled -- it caches a check that already
-            # passed, which keeps a second "auto" evaluation off the network
-            # and keeps "off" from warning about packages that were in fact
-            # signature-checked.
+            # signature-derived check runs here. "files" trusts no verified mark
+            # in the lockfile: it re-checks every package on every evaluation, a
+            # standing assertion that the supplied locks cover the whole mirror.
+            # The other modes treat a mark as settled, caching a check that
+            # already passed.
             verification = version_tag.provider_verification
             if verification == "files":
                 to_check = packages
             else:
                 to_check = unverified_packages(facts, packages, platforms)
 
+            # The `h1:` dirhashes this evaluation saw, from whichever hash
+            # source ran. Empty when nothing was left to check, which is the
+            # settled case: the facts already hold them.
+            dirhashes = {}
+
             if to_check:
-                provider_locks = parse_provider_locks([
+                provider_locks, dirhashes = parse_provider_locks([
                     ctx.read(lock)
                     for lock in version_tag.provider_locks
                 ])
 
-                # The supplied locks are consulted first, so the tool below
-                # runs only for what they leave uncovered.
+                # Consulted first, so the tool below runs only for what the
+                # supplied locks leave uncovered.
                 uncovered = verify_provider_hashes(facts, to_check, platforms, provider_locks)
 
                 if uncovered and verification == "auto":
-                    # A tool release that could not be resolved has recorded
-                    # its error already, and the mirror cannot be built without
-                    # it, so locking is left to an evaluation that can reach
-                    # the release rather than failing here.
+                    # An unresolved tool release has recorded its error already;
+                    # leave locking to an evaluation that can reach the release
+                    # rather than failing here.
                     if not tool_sha256:
                         uncovered = []
                     else:
-                        # Fetched only when something is left to verify, and
-                        # only for the host: the tool is here to check
-                        # signatures, not to be built with.
-                        locked = lock_providers(
+                        # Host only: the tool is here to check signatures, not
+                        # to be built with.
+                        locked, locked_dirhashes = lock_providers(
                             ctx,
                             fetch_lock_tool(
                                 ctx,
@@ -219,19 +217,43 @@ def _tf_repositories(ctx):
                                 tool_sha256,
                             ),
                             uncovered,
+                            platforms,
                         )
+                        dirhashes = merge_provider_locks(dirhashes, locked_dirhashes)
                         uncovered = verify_provider_hashes(facts, uncovered, platforms, locked)
 
                 enforce_lock_coverage(verification, uncovered)
 
             repo_mirrors[tf_repo_name] = mirror_manifest(packages)
 
+            # Remembered under a key of their own: a dirhash covers a version
+            # rather than a platform, so widening a `package/` value to hold one
+            # would both misplace it and break every lockfile already carrying
+            # that value.
+            collected = collect_provider_dirhashes(ctx.facts, packages, dirhashes)
+            for p in packages:
+                key = "%s/%s/%s@%s" % (p["host"], p["namespace"], p["type"], p["version"])
+                if key in collected:
+                    facts[dirhash_fact_key(
+                        p["host"],
+                        p["namespace"],
+                        p["type"],
+                        p["version"],
+                    )] = {"hashes": ",".join(collected[key])}
+
             # Carried to the toolchain so a module's generated lock file can
-            # name every platform's package, not just the one that built it.
-            repo_hashes[tf_repo_name] = {
-                "%s/%s/%s@%s" % (p["host"], p["namespace"], p["type"], p["version"]): ",".join(p["hashes"])
-                for p in packages
-            }
+            # name every platform's package, not just the one that built it, and
+            # can carry the dirhashes terraform checks the unpacked tree
+            # against. Joined here rather than into the packages themselves:
+            # those reach the download repository as an attribute, which would
+            # make a dirhash arriving later re-fetch the whole mirror to no
+            # purpose.
+            repo_hashes[tf_repo_name] = {}
+            for p in packages:
+                key = "%s/%s/%s@%s" % (p["host"], p["namespace"], p["type"], p["version"])
+                repo_hashes[tf_repo_name][key] = ",".join(
+                    p["hashes"] + ["h1:" + h for h in collected.get(key, [])],
+                )
 
             download = tofu_download if version_tag.use_tofu else terraform_download
             download(
@@ -263,11 +285,9 @@ def _tf_repositories(ctx):
         arch = host_detected_arch,
     )
 
-    # reproducible: every network answer this extension depends on is now held
-    # in `facts`, so a second evaluation with the same manifest defines exactly
-    # the same repos without asking the registry anything. That keeps the
-    # extension out of the lockfile's moduleExtensions section; the facts it
-    # returns are persisted separately.
+    # reproducible: every network answer this extension depends on is held in
+    # `facts`, so a second evaluation with the same manifest defines the same
+    # repos without asking the registry anything.
     return ctx.extension_metadata(reproducible = True, facts = facts)
 
 _version_tag = tag_class(
