@@ -1,0 +1,22 @@
+load("@rules_tf//tf:def.bzl", "tf_module")
+load("@rules_tf//tf_apply:defs.bzl", "tf_root_module")
+
+tf_module(
+    name = "root-mod-remote",
+    tf_version = ">= 1.9, <= 1.10",
+    deps = [
+        "//tf/modules/mod-remote",
+    ],
+)
+
+# Shares the module's name deliberately, as the other root modules here do.
+# buildifier: disable=duplicated-name
+tf_root_module(
+    name = "root-mod-remote",
+    backend = {
+        "local": {
+            "path": "terraform.tfstate",
+        },
+    },
+    module = ":root-mod-remote",
+)

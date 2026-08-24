@@ -1,0 +1,10 @@
+load("@rules_tf//tf:def.bzl", "tf_module")
+
+# Mirrored remote modules, one per source shape. The validate test is what
+# exercises the store: it writes .terraform/modules/modules.json from the
+# mirror and then inits against it.
+tf_module(
+    name = "mod-remote",
+    tf_version = ">= 1.9, <= 1.10",
+    visibility = ["//visibility:public"],
+)

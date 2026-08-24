@@ -7,9 +7,9 @@
 # entries must be absolute, and only the running process knows where its
 # runfiles were laid out.
 #
-# Local modules are deliberately absent. Terraform installs those itself and
-# adds them to the manifest around the entries seeded here, so listing them
-# would duplicate work it does correctly anyway.
+# Local modules are seeded too, though terraform can install them itself:
+# installing one discards whatever the manifest held beneath it, so a mirrored
+# module nested inside a local module survives only if its parent is listed.
 #
 # usage: module_manifest.sh <store-table> <calls> <module-dir>
 
@@ -104,8 +104,15 @@ records="    {\"Key\":\"\",\"Source\":\"\",\"Dir\":\".\"}"
 SCRATCH="$(mktemp -d)"
 trap 'rm -rf "$SCRATCH"' EXIT
 
-while IFS="$TAB" read -r call source version; do
+while IFS="$FIELD" read -r kind call source version dir; do
     [ -n "$call" ] || continue
+
+    # A local module is recorded exactly as terraform records it: the source as
+    # written, and a directory relative to the module being initialised.
+    if [ "$kind" = "L" ]; then
+        add_record "$call" "$source" "" "$dir"
+        continue
+    fi
 
     spec="$(resolve_spec "$source" "$version")"
 
