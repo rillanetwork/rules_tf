@@ -242,13 +242,14 @@ tf_module_package = repository_rule(
 _STORE_BUILD = """\
 \"\"\"Generated: the mirrored terraform module store.\"\"\"
 
+load("@rules_tf//tf/rules:tf-module-store.bzl", "tf_module_store_info")
+
 package(default_visibility = ["//visibility:public"])
 
-exports_files(["store.json"])
-
-filegroup(
+tf_module_store_info(
     name = "store",
-    srcs = {srcs},
+    packages = {packages},
+    entries_json = {entries_json},
 )
 """
 
@@ -260,24 +261,22 @@ def _tf_module_store_impl(ctx):
 
     Returns:
       A `repo_metadata` marking the repository reproducible: it holds no fetched
-      bytes, only a manifest derived from its attributes.
+      bytes, only a BUILD file derived from its attributes.
     """
     packages = json.decode(ctx.attr.packages_json)
 
-    # Each package's files are reached through its own repository, so the
-    # manifest records the path a consumer resolves rather than a path here.
-    # Runfiles place an external repository's files under its canonical name.
-    manifest = {
-        store_key: {
-            "repo": repo,
-            "path": "%s/%s" % (repo, _PACKAGE_DIR),
-        }
-        for store_key, repo in packages.items()
+    # Each package is reached as a label rather than a path, because only the
+    # rule reading them can know the canonical repository name runfiles use.
+    labels = {
+        store_key: "@%s//:files" % repo
+        for store_key, repo in sorted(packages.items())
     }
 
-    ctx.file("store.json", content = json.encode_indent(manifest, indent = "  "))
+    # json.encode of an already-encoded string yields a valid Starlark string
+    # literal, so the table survives into the generated BUILD unescaped by hand.
     ctx.file("BUILD.bazel", _STORE_BUILD.format(
-        srcs = json.encode(["@%s//:files" % repo for repo in sorted(packages.values())]),
+        packages = json.encode_indent(labels, indent = "        "),
+        entries_json = json.encode(ctx.attr.entries_json),
     ))
 
     return ctx.repo_metadata(reproducible = True)
@@ -289,6 +288,12 @@ tf_module_store = repository_rule(
             mandatory = True,
             doc = "JSON object mapping each package's store key to the repository holding " +
                   "it, as the extension declared them.",
+        ),
+        "entries_json": attr.string(
+            mandatory = True,
+            doc = "JSON object mapping each declared module entry to its source and the " +
+                  "closure terraform resolved for it, each closure member naming the store " +
+                  "key of the package that holds it.",
         ),
     },
 )

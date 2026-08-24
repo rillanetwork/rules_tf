@@ -426,6 +426,49 @@ def module_packages(closures):
 
     return [packages[k] for k in sorted(packages.keys())]
 
+def store_entries(entries, closures):
+    """Describes each declared entry by the store packages its closure needs.
+
+    The closure is recorded against the entry as declared, because that is what
+    a module's own configuration has to be matched back to: a root module names
+    a source and a constraint, and only the entry it was declared under knows
+    which packages that reaches.
+
+    Args:
+      entries: the declared entries, as `parse_module_entries` returns them.
+      closures: resolved closures keyed by entry spec.
+
+    Returns:
+      A dict keyed by entry spec, each value carrying the entry's `source` and
+      its `modules`: the closure, each member naming the `store_key` of the
+      package holding it. Local members are dropped, since terraform installs
+      those itself.
+    """
+    sources = {e["spec"]: e["source"] for e in entries}
+    table = {}
+
+    for spec, modules in closures.items():
+        members = []
+        for m in modules:
+            source = package_source(m["source"])
+            if source.startswith("./") or source.startswith("../"):
+                continue
+
+            members.append({
+                "key": m["key"],
+                "source": m["source"],
+                "version": m["version"],
+                "subdir": m["subdir"],
+                "store_key": module_store_key(source, m["version"]),
+            })
+
+        table[spec] = {
+            "source": sources.get(spec, spec),
+            "modules": members,
+        }
+
+    return table
+
 def registry_module_parts(source, default_host):
     """Splits a registry module address into its host and coordinates.
 
