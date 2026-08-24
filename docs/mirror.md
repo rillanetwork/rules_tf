@@ -269,9 +269,9 @@ Warning: Incomplete lock file information for providers
 The current .terraform.lock.hcl file only includes checksums for linux_amd64
 ```
 
-Those hashes are already known: the extension resolved a package sha256 for every platform, checked it against
-the signature-derived hashes, and Bazel fetched against it. So each module's rundir is given a
-`.terraform.lock.hcl` written from them, and the warning goes with it.
+Those hashes are already known: the extension resolved a package sha256 for every platform, checked each against
+the signature-derived hashes, and Bazel fetched the host's package against its own. So each module's rundir is
+given a `.terraform.lock.hcl` written from them, and the warning goes with it.
 
 Each block carries both hash schemes, because terraform uses them in different places. A `zh:` value is the
 sha256 of a release zip - what the extension verified and what Bazel fetched against - but a mirror hands
