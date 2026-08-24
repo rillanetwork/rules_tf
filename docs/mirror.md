@@ -179,11 +179,11 @@ once per version, needs network access and the registry credentials described in
 [registries.md](registries.md), and is then answered from `MODULE.bazel.lock` until the manifest changes. Under a
 tofu toolchain it runs `tofu providers lock` against `registry.opentofu.org`.
 
-The run names every platform with a `-platform=` flag, which is also how the `h1:` dirhashes that complete a
-[generated lock file](#the-generated-terraformlockhcl) are obtained: `zh:` values come from the signed
-`SHA256SUMS`, but a dirhash can only be computed over an unpacked package, so each named platform costs one
-package download. They are remembered under their own `h1/<host>/<ns>/<type>/<version>` fact - a dirhash covers a
-version rather than a platform, since the lock document lists them flat with no platform label.
+The run passes a `-platform=` flag for every platform, which is also where the `h1:` dirhashes that complete a
+[generated lock file](#the-generated-terraformlockhcl) come from: `zh:` values come from the signed `SHA256SUMS`,
+but a dirhash has to be computed over an unpacked package, so each named platform costs one package download.
+Dirhashes are remembered under their own `h1/<host>/<ns>/<type>/<version>` fact, keyed by version rather than
+platform, because a lock file lists them flat with no platform label.
 
 Two consequences follow from where the result is kept:
 
@@ -261,7 +261,7 @@ When nothing is mirrored, `init` is run without `-plugin-dir` and resolves provi
 ## The generated `.terraform.lock.hcl`
 
 A module initialised against an unpacked mirror has no lock file to read, so terraform hashes the packages it
-finds, writes down what it computed, and warns that the result covers only the platform it ran on:
+finds, writes down what it computed, and warns that the result only covers the platform it ran on:
 
 ```
 Warning: Incomplete lock file information for providers
@@ -269,51 +269,47 @@ Warning: Incomplete lock file information for providers
 The current .terraform.lock.hcl file only includes checksums for linux_amd64
 ```
 
-Every one of those hashes is already known. The extension resolved a package sha256 for every platform before a
-byte was fetched, checked it against the signature-derived hashes, and Bazel fetched each package against the one
-for the host. So each module's rundir is given a `.terraform.lock.hcl` written from those hashes, and the warning
-goes with it.
+Those hashes are already known: the extension resolved a package sha256 for every platform, checked it against
+the signature-derived hashes, and Bazel fetched against it. So each module's rundir is given a
+`.terraform.lock.hcl` written from them, and the warning goes with it.
 
-Both hash schemes go in, because terraform reads them in different places. A `zh:` value is the sha256 of a
-release zip - what the extension verified and what Bazel fetched against - but a mirror hands terraform an
-extracted directory, which it can only hash as `h1:`, so it takes the `zh:` entries as given. The `h1:` values
-are the ones it can check, and they come from the same
-[`providers lock` run](#how-it-runs) that produced the `zh:` ones. A document carrying both is left alone by
-`init`; one carrying only `zh:` gets the running platform's dirhash appended, and `init` then reports that it
-"has made some changes to the provider dependency selections recorded in the .terraform.lock.hcl file". Which is
-also why the file is copied into the rundir rather than symlinked: under `provider_verification = "off"` there
-are no dirhashes to write, and `init` still rewrites what it was given.
+Each block carries both hash schemes, because terraform uses them in different places. A `zh:` value is the
+sha256 of a release zip - what the extension verified and what Bazel fetched against - but a mirror hands
+terraform an extracted directory, so terraform takes the `zh:` entries on trust and checks the `h1:` dirhashes
+instead. Both come from the same [`providers lock` run](#how-it-runs). Given both, `init` leaves the file alone;
+given only `zh:`, it appends the running platform's dirhash and reports that it "has made some changes to the
+provider dependency selections recorded in the .terraform.lock.hcl file". That is also why the file is copied
+into the rundir rather than symlinked: under `provider_verification = "off"` there are no dirhashes to write, so
+`init` rewrites what it was given.
 
-Every platform's hash goes into each block, since `hashes` is a set terraform matches the installed package
-against: the members covering other platforms are what let one document serve every machine.
+`hashes` is a set terraform matches the installed package against, so every platform's hash goes into every
+block. That is what lets one lock file serve every machine.
 
 ### Choosing the version
 
-The one field that is not set-shaped is `version`: a lock file holds one per provider address. Two blocks for
-one address is a hard `Duplicate provider lock` error, and a version a module's constraints exclude fails `init`
+`version` is the one field that is not set-shaped: a lock file holds one version per provider address. Two blocks
+for one address is a `Duplicate provider lock` error, and a version the module's constraints exclude fails `init`
 outright, so a source the mirror stocks at several versions has to be chosen between.
 
-That choice comes from the `providers` a module and its dependencies declare - the same declarations
+The choice comes from the `providers` a module and its dependencies declare - the same declarations
 `versions.tf.json` is generated from - ANDed together the way terraform ANDs them across a configuration. A
-declared source the mirror stocks once needs no constraint and is always named. A source stocked several times
-over, whose declared constraints select none of them, is left out of the document entirely, so terraform reports
-the conflict against the whole configuration rather than against a version this picked for it.
+source stocked once needs no constraint and is always named. A source stocked several times whose declared
+constraints select none of them is left out entirely, so terraform reports the conflict against the whole
+configuration rather than against a version picked here.
 
 Providers a module does not declare are left out too. A mirror is shared across a workspace, so it stocks
-providers any one module has nothing to do with - and `init` prunes a block the configuration does not require,
-rewriting the file to do it. That rewrite is the thing this document exists to avoid, so being stocked is not
-enough to be named.
+providers a given module has nothing to do with, and `init` rewrites the file to prune any block the
+configuration does not require. Avoiding that rewrite is the point of generating the file, so being stocked is
+not enough to be named.
 
 ### Providers a downloaded module requires
 
-The declarations the document is rendered from are the ones Bazel can see: a module's own `providers`, and those
-of everything it reaches through `deps`. A module sourced from a registry is outside that set: the document is
-written before `init` runs, and `init` is what downloads the module, so its `required_providers` block does not
-exist yet.
+Only the declarations Bazel can see are rendered: a module's own `providers`, plus those of everything it reaches
+through `deps`. A module sourced from a registry is outside that set, because `init` is what downloads it and the
+lock file is written before `init` runs.
 
-Where such a module requires a provider the configuration does not otherwise name, `init` resolves that provider
-itself and appends what it chose - an appended entry being the same change to the document as a pruned one, and
-reported the same way:
+If such a module requires a provider nothing else names, `init` resolves it and appends an entry - the same kind
+of change as a pruned block, and reported the same way:
 
 ```
 - Reusing previous version of hashicorp/aws from the dependency lock file
@@ -321,8 +317,8 @@ reported the same way:
 - Installing hashicorp/random v3.3.2...
 ```
 
-Declare the address in the root module's `providers` and both halves follow, because the one dict is what
-`versions.tf.json` and the lock document are generated from:
+Declare the address in the root module's `providers`, which is what both `versions.tf.json` and the lock file are
+generated from:
 
 ```python
 tf_module(
@@ -335,7 +331,6 @@ tf_module(
 )
 ```
 
-That is a real requirement rather than a note to the renderer. A downloaded module's providers are otherwise
-resolved fresh on every `init`, free to float to whatever the registry offers, and a configuration that never
-names them has nowhere to pin them; the report is the visible edge of that. Declaring the address is what pins
-it, and the report returning is the signal that the upstream module's requirements have moved.
+The declaration is a real requirement, not a hint to the renderer. A downloaded module's providers are otherwise
+resolved fresh on every `init`, free to float to whatever the registry offers, and the root module is the only
+place they can be pinned. If the report comes back, the upstream module's requirements have moved.
