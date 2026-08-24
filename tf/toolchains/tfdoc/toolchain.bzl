@@ -1,6 +1,12 @@
 """Downloads a terraform-docs release and declares its toolchain."""
 
-load("@rules_tf//tf/toolchains:checksums.bzl", "get_sha256sum")
+# terraform-docs joins the platform with dashes and prefixes the version with a
+# 'v', unlike every other tool this ruleset downloads.
+ARCHIVE_TEMPLATE = "terraform-docs-v{version}-{os}-{arch}.tar.gz"
+
+URL_TEMPLATE = "https://github.com/terraform-docs/terraform-docs/releases/download/v{version}/{file}"
+
+SHA256SUMS_TEMPLATE = "https://github.com/terraform-docs/terraform-docs/releases/download/v{version}/terraform-docs-v{version}.sha256sum"
 
 TfdocInfo = provider(
     doc = "Information about how to invoke tfdoc.",
@@ -38,6 +44,10 @@ tfdoc_toolchain = rule(
 )
 
 def _tfdoc_download_impl(ctx):
+    resolve_errors = json.decode(ctx.attr.resolve_errors)
+    if len(resolve_errors) > 0:
+        fail("the tfdoc toolchain could not be resolved:\n  " + "\n  ".join(resolve_errors))
+
     ctx.report_progress("Downloading tfdoc")
 
     ctx.template(
@@ -57,37 +67,19 @@ def _tfdoc_download_impl(ctx):
         executable = False,
     )
 
-    file = "terraform-docs-v{version}-{os}-{arch}.tar.gz".format(version = ctx.attr.version, os = ctx.attr.os, arch = ctx.attr.arch)
-
-    url_template = "https://github.com/terraform-docs/terraform-docs/releases/download/v{version}/{file}"
-    url = url_template.format(version = ctx.attr.version, file = file)
-    url_sha256sums_template = "https://github.com/terraform-docs/terraform-docs/releases/download/v{version}/terraform-docs-v{version}.sha256sum"
-    url_sha256sums = url_sha256sums_template.format(version = ctx.attr.version)
-
-    ctx.download(
-        url = [url_sha256sums],
-        output = "sha256sums",
-    )
-
-    data = ctx.read("sha256sums")
-    sha256sum = get_sha256sum(data, file)
-    if sha256sum == None or sha256sum == "":
-        fail("Could not find sha256sum for file {}".format(file))
+    file = ARCHIVE_TEMPLATE.format(version = ctx.attr.version, os = ctx.attr.os, arch = ctx.attr.arch)
+    url = URL_TEMPLATE.format(version = ctx.attr.version, file = file)
 
     res = ctx.download_and_extract(
         url = url,
-        sha256 = sha256sum,
+        sha256 = ctx.attr.tool_sha256,
         output = "terraform-docs",
     )
 
     if not res.success:
         fail("!failed to dl: ", url)
 
-    # Not reproducible: the archive's sha256 comes from a checksum document
-    # fetched live at each cold fetch, not from an attribute, so identical
-    # attributes do not pin identical contents. Resolving the hash in the
-    # extension as a fact, the way the tf tool archive is pinned, would
-    # restore the claim.
+    return ctx.repo_metadata(reproducible = True)
 
 tfdoc_download = repository_rule(
     _tfdoc_download_impl,
@@ -95,6 +87,19 @@ tfdoc_download = repository_rule(
         "version": attr.string(mandatory = True),
         "os": attr.string(mandatory = True),
         "arch": attr.string(mandatory = True),
+        "tool_sha256": attr.string(
+            mandatory = True,
+            doc = "sha256 of terraform-docs' release archive for this platform, resolved by " +
+                  "the module extension from the release's checksum document. Passed in " +
+                  "rather than fetched so that every download this repository makes is " +
+                  "pinned by an attribute.",
+        ),
+        "resolve_errors": attr.string(
+            default = "[]",
+            doc = "JSON list of the releases the module extension could not resolve. " +
+                  "Reported here rather than there so that an unreachable release fails " +
+                  "only the builds that generate documentation.",
+        ),
         "config": attr.label(
             mandatory = False,
             default = "@rules_tf//tf/toolchains/tfdoc:tf-doc.yaml",

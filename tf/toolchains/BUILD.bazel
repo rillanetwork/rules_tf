@@ -1,3 +1,4 @@
+load(":checksums_test.bzl", "checksums_test_suite")
 load(":provider_locks_test.bzl", "provider_locks_test_suite")
 load(":provider_mirror_test.bzl", "provider_mirror_test_suite")
 load(":registry_test.bzl", "registry_test_suite")
@@ -5,9 +6,10 @@ load(":semver_test.bzl", "semver_test_suite")
 
 package(default_applicable_licenses = ["//:license"])
 
-# Covers the parts that need no registry: the semver comparator and constraint
-# solver, the manifest grammar, the credentials parser, and the lock parser with
-# the verification pass it feeds.
+# Covers the parts that need no network: the semver comparator and constraint
+# solver, the manifest grammar, the credentials parser, the lock parser with the
+# verification pass it feeds, and the checksum documents every tool release is
+# pinned from.
 semver_test_suite()
 
 provider_mirror_test_suite()
@@ -15,6 +17,8 @@ provider_mirror_test_suite()
 registry_test_suite()
 
 provider_locks_test_suite()
+
+checksums_test_suite()
 
 # The tests themselves are not distributed: they are the only .bzl files here
 # that a consumer never loads, and they depend on bazel_skylib's unittest.
