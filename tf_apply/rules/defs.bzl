@@ -90,6 +90,20 @@ tf_vars = rule(
     """,
 )
 
+def backend_content(backend_type, config):
+    """
+    Renders a Terraform JSON-syntax configuration holding a single backend block.
+
+    Args:
+        backend_type: The backend type, which labels the block.
+        config: JSON-encoded object of backend settings.
+
+    Returns:
+        The file content, as a string.
+    """
+
+    return json.encode_indent({"terraform": {"backend": {backend_type: json.decode(config)}}}) + "\n"
+
 def tf_backend_impl(ctx):
     """
     Defines the backend configuration for a Terraform root module.
@@ -98,23 +112,19 @@ def tf_backend_impl(ctx):
         ctx: The rule context
 
     Returns:
-        An empty list as this rule does not produce any outputs.
+        DefaultInfo with the generated backend file.
     """
 
-    backend_file = ctx.actions.declare_file("{}.bazel.backend.tf.generated".format(ctx.attr.name_prefix))
-    backend_content = 'terraform {{\n  backend "{}" {{\n'.format(ctx.attr.type)
-    for key, value in ctx.attr.config.items():
-        backend_content += '    {} = "{}"\n'.format(key, value)
-    backend_content += "  }\n}\n"
+    backend_file = ctx.actions.declare_file("{}.bazel.backend.tf.json.generated".format(ctx.attr.name_prefix))
 
     ctx.actions.write(
         output = backend_file,
-        content = backend_content,
+        content = backend_content(ctx.attr.type, ctx.attr.config),
     )
 
     return [DefaultInfo(files = depset([backend_file], transitive = []))]
 
-tf_backend = rule(
+_tf_backend = rule(
     implementation = tf_backend_impl,
     attrs = {
         "name_prefix": attr.string(),
@@ -122,15 +132,36 @@ tf_backend = rule(
             mandatory = True,
             doc = "The backend type.",
         ),
-        "config": attr.string_dict(
-            default = {},
-            doc = "The backend configuration.",
+        "config": attr.string(
+            default = "{}",
+            doc = "JSON-encoded object of backend settings with arbitrary typed values.",
         ),
     },
     doc = """
     Defines the backend configuration for a Terraform root module.
     """,
 )
+
+def tf_backend(name, type, config = {}, **kwargs):
+    """
+    Defines the backend configuration for a Terraform root module.
+
+    Args:
+        name: The name of the target.
+        type: The backend type.
+        config: A dict of backend settings with arbitrary typed values (strings, numbers,
+            bools, lists, and nested maps, the last of these being how a backend's nested
+            blocks are written). Materialized as a `*.backend.tf.json` file, so values arrive
+            fully typed in Terraform.
+        **kwargs: Additional arguments passed to the underlying rule.
+    """
+
+    _tf_backend(
+        name = name,
+        type = type,
+        config = json.encode(config),
+        **kwargs
+    )
 
 def tf_init_impl(ctx):
     """
@@ -175,7 +206,7 @@ def tf_init_impl(ctx):
         executable = init_script,
         runfiles = ctx.runfiles(files = deps, symlinks = {
             ctx.attr.module.label.package + "/bazel.auto.tfvars.json": tfvars_file,
-            ctx.attr.module.label.package + "/bazel.backend.tf": backend_deps[0] if backend_deps else None,
+            ctx.attr.module.label.package + "/bazel.backend.tf.json": backend_deps[0] if backend_deps else None,
         }),
     )]
 
@@ -242,7 +273,7 @@ def tf_plan_impl(ctx):
         executable = plan_script,
         runfiles = ctx.runfiles(files = deps, symlinks = {
             ctx.attr.module.label.package + "/bazel.auto.tfvars.json": tfvars_file,
-            ctx.attr.module.label.package + "/bazel.backend.tf": backend_deps[0] if backend_deps else None,
+            ctx.attr.module.label.package + "/bazel.backend.tf.json": backend_deps[0] if backend_deps else None,
         }),
     )]
 
@@ -313,7 +344,7 @@ def tf_destroy_impl(ctx):
         executable = destroy_script,
         runfiles = ctx.runfiles(files = deps, symlinks = {
             ctx.attr.module.label.package + "/bazel.auto.tfvars.json": tfvars_file,
-            ctx.attr.module.label.package + "/bazel.backend.tf": backend_deps[0] if backend_deps else None,
+            ctx.attr.module.label.package + "/bazel.backend.tf.json": backend_deps[0] if backend_deps else None,
         }),
     )]
 
@@ -377,7 +408,7 @@ def tf_apply_impl(ctx):
         executable = apply_script,
         runfiles = ctx.runfiles(files = deps, symlinks = {
             ctx.attr.module.label.package + "/bazel.auto.tfvars.json": tfvars_file,
-            ctx.attr.module.label.package + "/bazel.backend.tf": backend_deps[0] if backend_deps else None,
+            ctx.attr.module.label.package + "/bazel.backend.tf.json": backend_deps[0] if backend_deps else None,
         }),
     )]
 
@@ -447,7 +478,7 @@ def tf_cmd_impl(ctx):
         executable = cmd_script,
         runfiles = ctx.runfiles(files = deps, symlinks = {
             ctx.attr.module.label.package + "/bazel.auto.tfvars.json": tfvars_file,
-            ctx.attr.module.label.package + "/bazel.backend.tf": backend_deps[0] if backend_deps else None,
+            ctx.attr.module.label.package + "/bazel.backend.tf.json": backend_deps[0] if backend_deps else None,
         }),
     )]
 

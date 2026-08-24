@@ -27,7 +27,10 @@ def tf_root_module(
     Args:
         name: The name of the Terraform module.
         module: The `tf_module` target to apply.
-        backend: A single-key dict of `{type: config}` describing the Terraform backend.
+        backend: A single-key dict of `{type: config}` describing the Terraform backend. The
+            config may hold arbitrary typed values (strings, numbers, bools, lists, and nested
+            maps, the last of these being how a backend's nested blocks are written).
+            Materialized as a `*.backend.tf.json` file, so values arrive fully typed.
         tfvars: A dict of Terraform input variables with arbitrary typed values (strings,
             numbers, bools, lists, and nested maps). Encoded to JSON and materialized as a
             `*.auto.tfvars.json` file, so values arrive fully typed in Terraform.

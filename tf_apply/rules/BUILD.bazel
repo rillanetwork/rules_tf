@@ -1,3 +1,5 @@
+load(":defs_test.bzl", "defs_test_suite")
+
 exports_files(
     glob([
         "*.sh",
@@ -5,17 +7,21 @@ exports_files(
 )
 
 exports_files(
-    glob([
-        "*.bzl",
-    ]),
+    glob(
+        ["*.bzl"],
+        exclude = ["*_test.bzl"],
+    ),
     visibility = ["//visibility:public"],
 )
 
+# The tests themselves are not distributed: they are the only .bzl files here
+# that a consumer never loads, and they depend on bazel_skylib's unittest.
 filegroup(
     name = "standard_package",
-    srcs = glob([
-        "*.bzl",
-    ]) + [
+    srcs = glob(
+        ["*.bzl"],
+        exclude = ["*_test.bzl"],
+    ) + [
         "BUILD.bazel",
     ],
     visibility = [
@@ -23,6 +29,8 @@ filegroup(
         "//tf_apply:__pkg__",
     ],
 )
+
+defs_test_suite()
 
 filegroup(
     name = "all_files",
