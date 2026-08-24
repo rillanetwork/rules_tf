@@ -45,9 +45,9 @@ Two registry behaviours are known not to work:
   redirect but never reports where it landed, so there is no correct base to resolve the reference against;
   absolute URLs in a redirected document work fine.
 - **Short-lived signed `download_url`s.** A package's download URL is recorded in `MODULE.bazel.lock` and fetched
-  by coordinates on machines that never saw the registry's answer, so a URL that expires (a signed object-store
-  link, say) fails any resolution cold enough to actually fetch - loudly, at download time. A warm
-  `--repository_cache` masks it, since the content hash is served without touching the URL.
+  by coordinates on machines that never saw the registry's answer, so a URL that expires - a signed object-store
+  link, say - fails at download time on any build cold enough to actually fetch. A warm `--repository_cache`
+  hides that, since the content hash is served without touching the URL.
 
 ## Authenticating to a private registry
 
@@ -55,7 +55,7 @@ A bearer token is discovered in this order:
 
 1. **`TF_TOKEN_<host>`**, with periods encoded as underscores - `TF_TOKEN_mycorp_example_com`. A hyphen in the
    hostname has no valid spelling in an environment variable name, so a double underscore stands in for it
-   (`my-registry.example.com` → `TF_TOKEN_my__registry_example_com`).
+   (`my-registry.example.com` -> `TF_TOKEN_my__registry_example_com`).
 2. **Terraform's JSON credentials file**, at `~/.terraform.d/credentials.tfrc.json`, which is where
    `terraform login` writes:
 

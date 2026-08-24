@@ -39,8 +39,7 @@ tf_module(
 )
 ```
 
-Either replaces the config it overrides outright rather than merging with it, so write one as a copy of the config
-it replaces.
+Neither merges: the config replaces the one it overrides outright, so write yours as a copy of that one.
 
 `tflint_extra_args` on `tf_module` passes further flags to tflint:
 
@@ -80,8 +79,8 @@ Only the toolchain-wide config is read for this, so a per-module config cannot i
 can use one the toolchain config mirrored, by declaring the same `plugin` block.
 
 Each ruleset's sha256 is resolved for every platform and recorded in `MODULE.bazel.lock` as extension facts, so a
-lockfile written on one machine covers the rest of the team and CI, and later builds reach no release API. See
-[mirror.md](mirror.md#where-the-resolved-mirror-is-recorded), which is the same mechanism.
+lockfile written on one machine covers the rest of the team and CI, and later builds reach no release API. It is
+the same mechanism as [the provider mirror's](mirror.md#where-the-resolved-mirror-is-recorded).
 
 ## Signing keys
 
@@ -103,8 +102,8 @@ plugin "custom" {
 }
 ```
 
-Without one the build fails, naming the block. Where the publisher's key is not to be had,
-`tflint_plugin_verification = "off"` admits rulesets on the release host's word, warning about each:
+Without one the build fails, naming the block. Where the publisher's key is unavailable,
+`tflint_plugin_verification = "off"` accepts a ruleset unverified, warning about each:
 
 ```python
 tf.download(

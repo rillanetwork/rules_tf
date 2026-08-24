@@ -61,11 +61,11 @@ def tf_module(
     #   {"alias": {"source": "...", "version": "...", "configuration_aliases": [...]}}.
     #
     # Accepted value forms:
-    #   "hashicorp/random:3.6.0"                    → full inline source:version
-    #   "terraform.io/builtin/terraform"             → builtin provider (no version)
-    #   {"source": "hashicorp/random", "version": "3.6.0"} → explicit dict
+    #   "hashicorp/random:3.6.0"                            -> full inline source:version
+    #   "terraform.io/builtin/terraform"                    -> builtin provider (no version)
+    #   {"source": "hashicorp/random", "version": "3.6.0"}  -> explicit dict
     #   {"source": "hashicorp/random", "version": "3.6.0",
-    #    "configuration_aliases": ["random.a", "random.b"]} → with aliases
+    #    "configuration_aliases": ["random.a", "random.b"]} -> with aliases
     normalised = {}
     for pname, pval in providers.items():
         if type(pval) == type(""):
