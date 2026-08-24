@@ -74,6 +74,11 @@ def declared_constraints(declared, default_registry):
     which decides whether the lock file may name it, while the constraints
     decide which version it names.
 
+    A module `terraform init` downloads is not in `declared` and cannot be: it
+    arrives only once `init` has run, and this document is written before that.
+    A provider only such a module requires has to be declared by a module Bazel
+    does see, as docs/mirror.md sets out.
+
     Args:
       declared: the `providers` dicts of a module and everything it depends on,
         each {alias: {"source": ..., "version": ...}}, as `tf_module` normalises
