@@ -2,8 +2,21 @@
 
 load("@rules_tf//tf:toolchains.bzl", "tf_toolchains")
 load("@rules_tf//tf:versions.bzl", "TFDOC_VERSION", "TFLINT_VERSION")
-load("@rules_tf//tf/toolchains:checksums.bzl", "resolve_tool_sha256")
+load("@rules_tf//tf/toolchains:checksums.bzl", "DEFAULT_ARCHIVE_TEMPLATE", "resolve_tool_sha256")
 load("@rules_tf//tf/toolchains:facts.bzl", "MIRROR_PLATFORMS")
+load("@rules_tf//tf/toolchains:module_download.bzl", "tf_module_package", "tf_module_store")
+load(
+    "@rules_tf//tf/toolchains:module_mirror.bzl",
+    "module_packages",
+    "module_store_key",
+    "parse_module_entries",
+    "recorded_closures",
+    "recorded_packages",
+    "resolve_module_packages",
+    "resolve_modules",
+    "unresolved_modules",
+    "unresolved_packages",
+)
 load(
     "@rules_tf//tf/toolchains:provider_locks.bzl",
     "enforce_lock_coverage",
@@ -106,6 +119,10 @@ def _tf_repositories(ctx):
     terraform_toolchains = []
     tofu_toolchains = []
     repo_mirrors = {}
+
+    # Keyed by store key, so a package two download tags both reach is declared
+    # once and its repository shared.
+    module_repos = {}
 
     # Accumulated across every download tag and handed back at the end, for
     # bzlmod to persist in MODULE.bazel.lock.
@@ -287,6 +304,12 @@ def _tf_repositories(ctx):
             # passed, which keeps a second "auto" evaluation off the network
             # and keeps "off" from warning about packages that were in fact
             # signature-checked.
+            # Fetched at most once per download tag, and only when something
+            # actually needs it: both the provider verification below and the
+            # module resolution after it want the tool, and neither wants it
+            # when the lockfile already answers.
+            lock_tool = None
+
             verification = version_tag.provider_verification
             if verification == "files":
                 to_check = packages
@@ -314,9 +337,8 @@ def _tf_repositories(ctx):
                         # Fetched only when something is left to verify, and
                         # only for the host: the tool is here to check
                         # signatures, not to be built with.
-                        locked = lock_providers(
-                            ctx,
-                            fetch_lock_tool(
+                        if lock_tool == None:
+                            lock_tool = fetch_lock_tool(
                                 ctx,
                                 tool,
                                 version_tag.version,
@@ -324,12 +346,105 @@ def _tf_repositories(ctx):
                                 host_detected_arch,
                                 TOFU_URL_TEMPLATE if version_tag.use_tofu else TERRAFORM_URL_TEMPLATE,
                                 tool_sha256,
-                            ),
-                            uncovered,
-                        )
+                            )
+
+                        locked = lock_providers(ctx, lock_tool, uncovered)
                         uncovered = verify_provider_hashes(facts, uncovered, platforms, locked)
 
                 enforce_lock_coverage(verification, uncovered)
+
+            # Modules are resolved by the tool itself: terraform reaches them
+            # through go-getter, whose scheme detection, subdirectory handling
+            # and credentials have no Starlark equivalent worth maintaining.
+            # What lands in the facts is the closure it installed, so the
+            # repository that fetches those modules is given concrete pins.
+            if version_tag.modules_json:
+                declared_modules = json.decode(ctx.read(version_tag.modules_json))
+            else:
+                declared_modules = version_tag.modules
+
+            module_entries = parse_module_entries(declared_modules)
+            closures, recorded_facts = recorded_closures(ctx.facts, module_entries)
+            facts.update(recorded_facts)
+
+            # A tool release that could not be resolved has recorded its error
+            # already, so resolution is left to an evaluation that can reach the
+            # release rather than failing twice over the same thing.
+            pending_modules = unresolved_modules(ctx.facts, module_entries)
+            if pending_modules and tool_sha256:
+                if lock_tool == None:
+                    lock_tool = fetch_lock_tool(
+                        ctx,
+                        tool,
+                        version_tag.version,
+                        host_detected_os,
+                        host_detected_arch,
+                        TOFU_URL_TEMPLATE if version_tag.use_tofu else TERRAFORM_URL_TEMPLATE,
+                        tool_sha256,
+                    )
+
+                resolved, module_facts, module_errors = resolve_modules(
+                    ctx,
+                    pending_modules,
+                    lock_tool,
+                )
+                facts.update(module_facts)
+                resolve_errors.extend(module_errors)
+                closures.update(resolved)
+
+            # Each distinct package gets one repository. A package that reduces
+            # to an archive is pinned by that repository's attributes and so is
+            # cacheable across workspaces; one that does not is fetched by the
+            # tool there and says so.
+            packages = module_packages(closures)
+            coordinates, package_facts = recorded_packages(ctx.facts, packages)
+            facts.update(package_facts)
+
+            pending_packages = unresolved_packages(ctx.facts, packages)
+            if pending_packages:
+                newly, new_package_facts, package_errors = resolve_module_packages(
+                    ctx,
+                    pending_packages,
+                    DEFAULT_REGISTRY[version_tag.use_tofu],
+                )
+                facts.update(new_package_facts)
+                resolve_errors.extend(package_errors)
+                coordinates.update(newly)
+
+            # Both releases name their archive the same way, which is why
+            # fetch_lock_tool takes the default too.
+            tool_file = DEFAULT_ARCHIVE_TEMPLATE.format(
+                tool = tool,
+                version = version_tag.version,
+                os = host_detected_os,
+                arch = host_detected_arch,
+            )
+            tool_url = (TOFU_URL_TEMPLATE if version_tag.use_tofu else TERRAFORM_URL_TEMPLATE).format(
+                version = version_tag.version,
+                file = tool_file,
+            )
+
+            for p in packages:
+                store_key = module_store_key(p["source"], p["version"])
+                if store_key in module_repos:
+                    continue
+
+                resolved_package = coordinates.get(store_key, {})
+                repo = "tf_module_%s" % store_key
+                module_repos[store_key] = repo
+
+                tf_module_package(
+                    name = repo,
+                    store_key = store_key,
+                    source = p["source"],
+                    version = p["version"],
+                    download_url = resolved_package.get("download_url", ""),
+                    sha256 = resolved_package.get("sha256", ""),
+                    registry_host = DEFAULT_REGISTRY[version_tag.use_tofu],
+                    tool_name = tool,
+                    tool_url = tool_url,
+                    tool_sha256 = tool_sha256,
+                )
 
             repo_mirrors[tf_repo_name] = mirror_manifest(packages)
 
@@ -347,6 +462,11 @@ def _tf_repositories(ctx):
                 tofu_toolchains.append(tf_repo_name)
             else:
                 terraform_toolchains.append(tf_repo_name)
+
+    tf_module_store(
+        name = "tf_modules",
+        packages_json = json.encode(module_repos),
+    )
 
     tf_toolchains(
         name = "tf_toolchains",
@@ -424,6 +544,18 @@ _version_tag = tag_class(
                   "the registry's word, warning about each -- what a registry publishing " +
                   "no signatures leaves available. Packages a recorded mark or a " +
                   "provider_locks file covers are as verified as under 'auto', silently.",
+        ),
+        "modules": attr.string_list(
+            doc = "Remote terraform modules to resolve and mirror. A registry module is " +
+                  "written as '<address>@<version>', where the version may be any constraint " +
+                  "terraform accepts; every other source is written verbatim, since a getter " +
+                  "source carries its own ref and terraform rejects a version beside one.",
+        ),
+        "modules_json": attr.label(
+            allow_single_file = True,
+            doc = "A JSON file containing the module list. Alternative to the inline modules " +
+                  "attribute. The file must contain a JSON array of strings in the same " +
+                  "format as the modules attribute.",
         ),
         "mirror_json": attr.label(
             allow_single_file = True,
