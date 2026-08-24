@@ -250,9 +250,43 @@ def providers_base_url(client, host):
       The base URL, with a trailing slash, or "" when the host cannot be
       discovered -- in which case the reason is recorded on the client.
     """
+    return _service_base_url(client, host, "providers.v1", "provider registry")
+
+def modules_base_url(client, host):
+    """Returns host's modules.v1 API base URL, via remote service discovery.
+
+    A host may serve one registry and not the other, so the two are discovered
+    and memoized separately even though one document advertises both.
+
+    Args:
+      client: the registry client from `new_registry_client`.
+      host: registry hostname to discover.
+
+    Returns:
+      The base URL, with a trailing slash, or "" when the host cannot be
+      discovered -- in which case the reason is recorded on the client.
+    """
+    return _service_base_url(client, host, "modules.v1", "module registry")
+
+def _service_base_url(client, host, service, label):
+    """Returns host's base URL for one discovery service.
+
+    Args:
+      client: the registry client from `new_registry_client`, which memoizes per
+        (service, host) so a manifest naming several entries on one host
+        discovers once.
+      host: registry hostname to discover.
+      service: the discovery document key, e.g. "providers.v1".
+      label: how the service is named in an error message.
+
+    Returns:
+      The base URL, with a trailing slash, or "" when the host cannot be
+      discovered.
+    """
     bases = client["bases"]
-    if host in bases:
-        return bases[host]
+    memo_key = "%s/%s" % (service, host)
+    if memo_key in bases:
+        return bases[memo_key]
 
     ctx = client["ctx"]
     url = "https://%s/.well-known/terraform.json" % host
@@ -269,23 +303,27 @@ def providers_base_url(client, host):
             ("failed service discovery for registry host '%s' (%s) -- the host must serve a " +
              "terraform service-discovery document") % (host, url),
         )
-        bases[host] = ""
+        bases[memo_key] = ""
         return ""
 
     # Not cleaned up: module_ctx has no delete(), and these land in the
     # extension's own working directory rather than in any repo.
     doc = json.decode(ctx.read(output))
 
-    path = doc.get("providers.v1")
+    path = doc.get(service)
     if not path:
         client["errors"].append(
-            ("registry host '%s' does not advertise a provider registry: no 'providers.v1' " +
-             "key in %s") % (host, url),
+            "registry host '%s' does not advertise a %s: no '%s' key in %s" % (
+                host,
+                label,
+                service,
+                url,
+            ),
         )
-        bases[host] = ""
+        bases[memo_key] = ""
         return ""
 
-    # providers.v1 may be an absolute URL, or a reference relative to the
+    # The advertised path may be an absolute URL, or a reference relative to the
     # discovery document itself -- "v1/providers/" resolves under
     # /.well-known/, the way any document-relative reference would.
     base = resolve_url(url, path)
@@ -293,5 +331,5 @@ def providers_base_url(client, host):
     if not base.endswith("/"):
         base += "/"
 
-    bases[host] = base
+    bases[memo_key] = base
     return base

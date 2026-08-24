@@ -49,7 +49,10 @@ def tf_download_impl(ctx, tool, build_tpl, url_template):
     """
     resolve_errors = json.decode(ctx.attr.resolve_errors)
     if len(resolve_errors) > 0:
-        fail("the provider mirror could not be resolved:\n  " + "\n  ".join(resolve_errors))
+        # Providers, modules and the tool release all resolve in the extension
+        # and defer their failures here, so the wording covers whichever of them
+        # the messages came from.
+        fail("the tf mirror could not be resolved:\n  " + "\n  ".join(resolve_errors))
 
     ctx.report_progress("Downloading %s" % tool)
 
