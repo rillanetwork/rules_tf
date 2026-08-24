@@ -9,7 +9,6 @@ set -euo pipefail
 
 TF_BIN_PATH="${PWD}/%TF_BIN_PATH%"
 TF_DIR="%TF_DIR%"
-TF_PLUGINS_DIR="${PWD}/%TF_PLUGINS_DIR%"
 
 if [ -z "${BUILD_WORKSPACE_DIRECTORY:-}" ]; then
     echo "BUILD_WORKSPACE_DIRECTORY is not set. Please set it before running this script."
