@@ -14,6 +14,7 @@ load(
     "recorded_packages",
     "resolve_module_packages",
     "resolve_modules",
+    "store_entries",
     "unresolved_modules",
     "unresolved_packages",
 )
@@ -123,6 +124,7 @@ def _tf_repositories(ctx):
     # Keyed by store key, so a package two download tags both reach is declared
     # once and its repository shared.
     module_repos = {}
+    module_entries_table = {}
 
     # Accumulated across every download tag and handed back at the end, for
     # bzlmod to persist in MODULE.bazel.lock.
@@ -392,6 +394,10 @@ def _tf_repositories(ctx):
                 resolve_errors.extend(module_errors)
                 closures.update(resolved)
 
+            # Recorded against the entry as declared, since a root module's
+            # own configuration is matched back to it by source and constraint.
+            module_entries_table.update(store_entries(module_entries, closures))
+
             # Each distinct package gets one repository. A package that reduces
             # to an archive is pinned by that repository's attributes and so is
             # cacheable across workspaces; one that does not is fetched by the
@@ -466,6 +472,7 @@ def _tf_repositories(ctx):
     tf_module_store(
         name = "tf_modules",
         packages_json = json.encode(module_repos),
+        entries_json = json.encode(module_entries_table),
     )
 
     tf_toolchains(

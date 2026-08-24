@@ -18,3 +18,11 @@ TfArtifactInfo = provider(
         "package",
     ],
 )
+
+TfModuleStoreInfo = provider(
+    doc = "The mirrored terraform module store and the table locating its packages",
+    fields = [
+        "table",
+        "files",
+    ],
+)

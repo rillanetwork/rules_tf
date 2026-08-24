@@ -118,6 +118,7 @@ tf_toolchain(
    tf = "@{toolchain_repo}//:runtime",
    mirror_files = "@{toolchain_repo}//:mirror_files",
    mirror_versions_json = "@{toolchain_repo}//:mirror_versions.json",
+   modules = "@tf_modules//:store",
    mirror_versions = {mirror_versions},
    default_registry = "{default_registry}",
 )

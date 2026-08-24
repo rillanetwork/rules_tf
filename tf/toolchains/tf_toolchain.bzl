@@ -1,10 +1,11 @@
-"""The tf toolchain type: a terraform or tofu binary plus its provider mirror."""
+"""The tf toolchain type: a terraform or tofu binary plus its provider and module mirrors."""
 
 load("@bazel_skylib//lib:paths.bzl", "paths")
+load("@rules_tf//tf/rules:providers.bzl", "TfModuleStoreInfo")
 
 TfInfo = provider(
     doc = "Information about how to invoke Terraform/Tofu.",
-    fields = ["tf", "deps", "mirror_path", "mirror_versions", "default_registry"],
+    fields = ["tf", "deps", "mirror_path", "mirror_versions", "default_registry", "modules"],
 )
 
 def _mirror_path(ctx):
@@ -26,6 +27,7 @@ def _tf_toolchain_impl(ctx):
         runtime = TfInfo(
             tf = ctx.file.tf,
             mirror_path = _mirror_path(ctx),
+            modules = ctx.attr.modules[TfModuleStoreInfo],
             mirror_versions = ctx.attr.mirror_versions,
             default_registry = ctx.attr.default_registry,
             deps = [ctx.file.tf] + ctx.files.mirror_files + [ctx.file.mirror_versions_json],
@@ -54,6 +56,11 @@ tf_toolchain = rule(
             allow_single_file = True,
             cfg = "target",
             doc = "The mirror's manifest, which sits beside `mirror/` and so anchors its path.",
+        ),
+        "modules": attr.label(
+            mandatory = True,
+            providers = [TfModuleStoreInfo],
+            doc = "The mirrored remote module store, which a module's manifest points into.",
         ),
         "mirror_versions": attr.string_list(
             doc = "Canonical 'source@version' strings for every provider present in the mirror.",
