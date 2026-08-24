@@ -82,31 +82,17 @@ def tf_download_impl(ctx, tool, build_tpl, url_template):
     if not res.success:
         fail("!failed to dl: ", url)
 
-    # Every coordinate was resolved by the module extension, so this reaches no
-    # registry: known URLs against known hashes, which makes each package
-    # content-addressed for --repository_cache and lets a warm cache serve the
-    # whole mirror offline.
-    #
     # Each (source, version) is fetched independently, so multiple versions of a
     # single source coexist in the mirror -- terraform would otherwise AND their
     # required_providers constraints into an unsatisfiable set.
     packages = json.decode(ctx.attr.providers_json)
     download_providers(ctx, packages, ctx.attr.os, ctx.attr.arch)
 
-    # The manifest as it actually landed, for a build to inspect. Constraints
-    # are already resolved by this point, so these are all concrete pins.
     ctx.file(
         "mirror_versions.json",
         content = json.encode(mirror_manifest(packages)),
     )
 
-    # reproducible: the contents are a function of the attributes alone. Every
-    # provider package is fetched against a sha256 the extension resolved and
-    # passed in, and the tool's own archive against the tool_sha256 attribute,
-    # resolved the same way. That makes the whole ~750MB directory eligible for the repo
-    # contents cache, so a cold output base links it rather than downloading
-    # and extracting it again -- which the repository cache alone cannot do,
-    # since it holds the archives rather than the unpacked mirror.
     return ctx.repo_metadata(reproducible = True)
 
 _DECLARE_TOOLCHAIN_CHUNK = """
@@ -116,6 +102,7 @@ tf_toolchain(
    mirror_files = "@{toolchain_repo}//:mirror_files",
    mirror_versions_json = "@{toolchain_repo}//:mirror_versions.json",
    mirror_versions = {mirror_versions},
+   mirror_hashes = {mirror_hashes},
    default_registry = "{default_registry}",
 )
 

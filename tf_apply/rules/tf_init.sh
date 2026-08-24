@@ -8,6 +8,7 @@ set -euo pipefail
 TF_BIN_PATH="${PWD}/%TF_BIN_PATH%"
 TF_DIR="%TF_DIR%"
 TF_PLUGINS_DIR="%TF_PLUGINS_DIR%"
+TF_LOCK_FILE="%TF_LOCK_FILE%"
 
 # Empty when nothing is mirrored: the flag is left off and init resolves against
 # the registry instead.
@@ -36,6 +37,11 @@ rm -rf "$PWD/$TF_DIR/.terraform.lock.hcl"
 # remove any existing .terraform and .terraform.lock.hcl files
 rm -rf "$OUT_DIR/.terraform"
 rm -rf "$OUT_DIR/.terraform.lock.hcl"
+
+if [ -n "$TF_LOCK_FILE" ]; then
+    cp -f "$TF_LOCK_FILE" "$PWD/$TF_DIR/.terraform.lock.hcl"
+    chmod u+w "$PWD/$TF_DIR/.terraform.lock.hcl"
+fi
 
 echo "Running 'terraform init' in directory: $PWD/$TF_DIR"
 
