@@ -38,14 +38,26 @@ CONFIG="$(cd "$(dirname "$CONFIG")" && pwd -P)/$(basename "$CONFIG")"
 
 TAB="$(printf '\t')"
 
+# Each directory's listing is captured here before it is read. Reading straight
+# from a process substitution would hide a terraform-docs failure: bash never
+# checks one's exit status, so unparseable HCL would arrive as a module with no
+# calls at all, and the build would go green having mirrored nothing.
+SCRATCH="$(mktemp -d)"
+trap 'rm -rf "$SCRATCH"' EXIT
+READS=0
+
 emit() {
     local dir="$1" prefix="$2" depth="$3"
-    local name source version target
+    local name source version target listing
 
     if [ "$depth" -gt "$MAX_DEPTH" ]; then
         echo "module_calls: nesting exceeded $MAX_DEPTH levels at $dir; a module calls itself" >&2
         exit 1
     fi
+
+    READS=$((READS + 1))
+    listing="$SCRATCH/calls.$READS"
+    "$TFDOC" -c "$CONFIG" "$dir" > "$listing"
 
     while IFS="$TAB" read -r name source version; do
         [ -n "$name" ] || continue
@@ -65,7 +77,7 @@ emit() {
                 printf '%s\t%s\t%s\n' "$prefix$name" "$source" "$version"
                 ;;
         esac
-    done < <("$TFDOC" -c "$CONFIG" "$dir")
+    done < "$listing"
 }
 
 emit "$ROOT" "" 0 | LC_ALL=C sort > "$OUT"
