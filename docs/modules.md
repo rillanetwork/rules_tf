@@ -59,9 +59,9 @@ getter detectors claim those hosts first, so they are git sources and take no ve
 ## How resolution works
 
 Terraform itself does the resolving. Its source grammar spans the registry, several VCS shorthands, plain HTTP
-and a handful of object stores, each with its own scheme detection, subdirectory handling and credentials;
-re-implementing that in Starlark would be a standing fidelity gap. So the extension writes a synthetic root
-module naming every declared entry, runs `terraform get`, and reads the closure terraform installed out of
+and a handful of object stores, each with its own scheme detection, subdirectory handling and credentials, and a
+Starlark re-implementation would drift from it. So the extension writes a synthetic root module naming every
+declared entry, runs `terraform get`, and reads the closure terraform installed out of
 `.terraform/modules/modules.json`.
 
 That run happens in the **module extension**, not in the repository that fetches the modules. The answers -
@@ -70,8 +70,7 @@ extension facts in `MODULE.bazel.lock`. A later evaluation with those facts answ
 reaches no source at all.
 
 The whole closure is recorded, not just the declared entry, because terraform keys nested modules by call path
-and resolves them transitively. Recording the closure is what lets a manifest be rebuilt later without
-re-running the tool.
+and resolves them transitively. That is what lets a manifest be rebuilt later without re-running the tool.
 
 ## The store
 
@@ -84,7 +83,7 @@ modules often call a shared label module from several places - appears once in t
 
 ## Reproducibility
 
-Each package repository reports its own verdict, because the two fetch paths make genuinely different promises:
+The two fetch paths promise different things, so each package repository reports its own `reproducible` value:
 
 - A package that reduces to **a single archive** is fetched against a `sha256` the extension resolved, so its
   contents are a function of its attributes alone. It reports `reproducible = True`.
@@ -93,7 +92,7 @@ Each package repository reports its own verdict, because the two fetch paths mak
   directory), so it reports `reproducible = False`.
 
 Both are eligible for the repo contents cache; `reproducible = False` does not by itself force a re-fetch when
-the recorded inputs still match. What the pinned path buys is verification: the bytes are checked against a
+the recorded inputs still match. What the pinned path buys is verification: its bytes are checked against a
 recorded hash, so drift is detected.
 
 ## Checksums
@@ -118,8 +117,8 @@ come from the closure the extension recorded, so they need no parsing at all.
 
 A call is matched back to a mirrored entry by source. The version need not be spelled the same way in both
 places: pinning `cloudposse/vpc/aws@2.1.1` in `MODULE.bazel` while a module asks for `~> 2.1` is the ordinary
-case, and terraform still checks that what it finds satisfies the constraint. Mirroring several versions of one
-source is refused rather than guessed at, since nothing here can choose between them.
+case, and terraform still checks that what it finds satisfies the constraint. Mirroring one source at several
+versions is an error, since nothing here can choose between them.
 
 ## Unmirrored modules fail the build
 
