@@ -8,10 +8,6 @@ resolved once, recorded in `MODULE.bazel.lock`, fetched once, and shared.
 It is the module-side analogue of [the provider mirror](mirror.md), and it works the same way: coordinates are
 resolved in the module extension, and the repositories that fetch them receive concrete pins.
 
-> **Status.** The store is built and populated. Wiring it into `tf_validate_test` and the `tf_root_module` init
-> path is not done yet, so declaring modules today fetches and caches them but does not yet change what
-> `terraform init` does. See [What is not wired yet](#what-is-not-wired-yet).
-
 ## Declaring modules
 
 ```python
@@ -108,14 +104,37 @@ detects later drift; it does not attest the bytes a publisher signed. There is n
 provider mirror's [verified hashes](mirror.md#verified-hashes), and there cannot be until registries publish
 signatures.
 
-## What is not wired yet
+## How a module reaches the store
 
-The store exists and is populated, but nothing consumes it during `init` or `validate`. Remaining work:
+Terraform records installed modules in `.terraform/modules/modules.json`, keyed by *call path*: the chain of
+names the `module` blocks were given. `validate` and `init` write that file before running terraform, so the
+remote modules are already installed as far as terraform is concerned.
 
-- Generating `.terraform/modules/modules.json` per root module, so `init` resolves against the store instead of
-  the network.
-- Putting the store into `tf_validate_test` and `tf_root_module` runfiles.
-- An audit after `init` that fails the build if terraform fetched a remote module the mirror did not supply.
+Call paths come from the configuration, since nothing else knows them - a Bazel dependency is a label, and the
+same module may be called twice under two different names. Each `tf_module` therefore reads its own sources
+with `terraform-docs` (already a toolchain here) and follows local calls into their directories, composing
+keys like `amodule.sg` for a remote module called from inside a local one. Nested modules of a *remote* module
+come from the closure the extension recorded, so they need no parsing at all.
 
-Until then, declaring `modules` pre-fetches and caches them, and `terraform init` continues to download modules
-itself as it always has.
+A call is matched back to a mirrored entry by source. The version need not be spelled the same way in both
+places: pinning `cloudposse/vpc/aws@2.1.1` in `MODULE.bazel` while a module asks for `~> 2.1` is the ordinary
+case, and terraform still checks that what it finds satisfies the constraint. Mirroring several versions of one
+source is refused rather than guessed at, since nothing here can choose between them.
+
+## Unmirrored modules fail the build
+
+A module calling a remote source the mirror does not hold fails, naming the source and pointing at
+`MODULE.bazel`:
+
+```
+module_manifest: no mirrored module matches "cloudposse/vpc/aws" version "~> 2.1".
+  Add it to the tf.download modules list in MODULE.bazel.
+```
+
+This happens whether or not a network is reachable. Bazel does not sandbox tests away from the network, so
+without the check an undeclared module would simply be downloaded at `init` and nobody would notice the mirror
+had been bypassed.
+
+The one gap: a *generated* `.tf` file is not scanned, because generated files live under `bazel-out` rather than
+beside the module's sources. Nothing in this ruleset generates module calls today - `versions.tf.json` holds
+providers - but a module call written by another rule would go unseen.

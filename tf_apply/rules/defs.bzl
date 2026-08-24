@@ -143,6 +143,8 @@ def tf_init_impl(ctx):
     """
 
     tf_toolchain = ctx.toolchains["//:tf_toolchain_type"]
+    module = ctx.attr.module[TfModuleInfo]
+    store = tf_toolchain.runtime.modules
 
     init_script = ctx.actions.declare_file(ctx.label.name)
 
@@ -153,6 +155,9 @@ def tf_init_impl(ctx):
             "%TF_BIN_PATH%": tf_toolchain.runtime.tf.short_path,
             "%TF_DIR%": ctx.attr.module.label.package,
             "%TF_PLUGINS_DIR%": tf_toolchain.runtime.mirror.short_path,
+            "%TF_MANIFEST_SCRIPT%": ctx.file._manifest_script.short_path,
+            "%TF_STORE_TABLE%": store.table.short_path,
+            "%TF_MODULE_CALLS%": module.calls.short_path,
         },
     )
 
@@ -162,11 +167,14 @@ def tf_init_impl(ctx):
     # find file ending with tfvars
     tfvars_file = [file for file in tfvars_deps if file.short_path.endswith(".tfvars.json.generated")][0]
 
-    deps = ctx.attr.module[TfModuleInfo].transitive_srcs.to_list() + tf_toolchain.runtime.deps + tfvars_deps + backend_deps
+    deps = module.transitive_srcs.to_list() + tf_toolchain.runtime.deps + tfvars_deps + backend_deps + [
+        ctx.file._manifest_script,
+        module.calls,
+    ]
 
     return [DefaultInfo(
         executable = init_script,
-        runfiles = ctx.runfiles(files = deps, symlinks = {
+        runfiles = ctx.runfiles(files = deps, transitive_files = store.files, symlinks = {
             ctx.attr.module.label.package + "/bazel.auto.tfvars.json": tfvars_file,
             ctx.attr.module.label.package + "/bazel.backend.tf": backend_deps[0] if backend_deps else None,
         }),
@@ -192,6 +200,11 @@ tf_init = rule(
             allow_single_file = True,
             # executable = True,
             doc = "Script to run for applying the Tf module.",
+        ),
+        "_manifest_script": attr.label(
+            default = Label("@rules_tf//tf/rules:module_manifest.sh"),
+            allow_single_file = True,
+            doc = "Script writing the manifest that points init at the mirrored modules.",
         ),
     },
     toolchains = ["//:tf_toolchain_type"],
