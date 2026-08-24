@@ -1,0 +1,11 @@
+# terraform-docs template that emits a module's direct module calls as TSV,
+# one `name<TAB>source<TAB>version` row each.
+#
+# Passed with an explicit `-c`, which beats any .terraform-docs.yml a module
+# carries of its own -- otherwise a module documenting itself would decide the
+# format this rule parses.
+formatter: "markdown"
+content: |-
+  {{- range .Module.ModuleCalls }}
+  {{ printf "%s\t%s\t%s" .Name .Source .Version }}
+  {{- end }}

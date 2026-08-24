@@ -6,6 +6,8 @@ filegroup(
         "BUILD.bazel",
     ] + glob([
         "*.bzl",
+        "*.sh",
+        "*.yml",
     ]),
     visibility = [
         "//tf:__pkg__",
@@ -19,6 +21,16 @@ exports_files(
     visibility = [
         "//tf:__pkg__",
     ],
+)
+
+# The module-calls action's script and terraform-docs template, reached by
+# label from the tf_module rule wherever it is instantiated.
+exports_files(
+    glob([
+        "*.sh",
+        "*.yml",
+    ]),
+    visibility = ["//visibility:public"],
 )
 
 filegroup(

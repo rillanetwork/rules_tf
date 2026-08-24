@@ -3,6 +3,7 @@
 load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@rules_pkg//pkg:providers.bzl", "PackageFilegroupInfo", "PackageFilesInfo")
 load("@rules_tf//tf/rules:providers.bzl", "TfArtifactInfo", "TfModuleInfo")
+load("@rules_tf//tf/rules:tf-module-calls.bzl", "MODULE_CALLS_ATTRS", "TFDOC_TOOLCHAIN", "declare_module_calls")
 
 def _artifact_impl(ctx):
     return [
@@ -34,6 +35,8 @@ def _module_impl(ctx):
         transitive = [dep[TfModuleInfo].transitive_srcs if TfModuleInfo in dep else dep.files for dep in ctx.attr.deps],
     )
 
+    calls = declare_module_calls(ctx, all_srcs)
+
     return [
         DefaultInfo(
             files = all_srcs,
@@ -43,8 +46,13 @@ def _module_impl(ctx):
             deps = ctx.attr.deps,
             module_path = ctx.label.package,
             transitive_srcs = all_srcs,
+            calls = calls,
         ),
         ctx.attr.srcs[PackageFilesInfo],
+
+        # Not a default output: the calls file feeds the module manifest rather
+        # than the module, but naming it makes it inspectable and testable.
+        OutputGroupInfo(module_calls = depset([calls])),
     ]
 
 tf_module = rule(
@@ -52,7 +60,8 @@ tf_module = rule(
     attrs = {
         "srcs": attr.label(mandatory = True, providers = [PackageFilesInfo, DefaultInfo]),
         "deps": attr.label_list(providers = [[TfArtifactInfo], [PackageFilegroupInfo, DefaultInfo], [PackageFilesInfo, DefaultInfo]]),
-    },
+    } | MODULE_CALLS_ATTRS,
+    toolchains = [TFDOC_TOOLCHAIN],
 )
 
 def _compute_deps_pfi(s, prefix, files, mapped_files_depsets):
