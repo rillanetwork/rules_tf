@@ -1,31 +1,19 @@
 load("@rules_tf//tf:def.bzl", "tf_module")
-load("@rules_tf//tf_apply:defs.bzl", "tf_root_module")
 
 tf_module(
-    name = "root-mod-a",
-    providers = {
-        "random": "hashicorp/random:3.3.2",
-        "terraform": "terraform.io/builtin/terraform",
-    },
-    tf_version = ">= 1.9, <= 1.10",
-    tflint_config = "//tf:tflint-custom-config",
-    deps = [
-        "//tf/modules/mod-a",
-    ],
-)
-
-# Shares the module's name deliberately: tf_root_module only declares targets
-# suffixed with ".init", ".plan" and so on, so nothing actually collides. That is
-# invisible to buildifier, which cannot expand a macro.
-# buildifier: disable=duplicated-name
-tf_root_module(
     name = "root-mod-a",
     backend = {
         "local": {
             "path": "terraform.tfstate",
         },
     },
-    module = ":root-mod-a",
+    providers = {
+        "random": "hashicorp/random:3.3.2",
+        "terraform": "terraform.io/builtin/terraform",
+    },
+    root = True,
+    tf_version = ">= 1.9, <= 1.10",
+    tflint_config = "//tf:tflint-custom-config",
     tfvars = {
         "input_var": "from-bazel-tfvars",
         "regions": [
@@ -36,4 +24,7 @@ tf_root_module(
         "replica_count": 3,
         "labels": {"team": "platform"},
     },
+    deps = [
+        "//tf/modules/mod-a",
+    ],
 )
