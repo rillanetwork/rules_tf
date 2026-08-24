@@ -9,7 +9,12 @@ tf_module(
     ],
 )
 
-# Shares the module's name deliberately, as the other root modules here do.
+# Kept on the standalone macro so that path stays covered; the sibling
+# root-mod-a declares the same targets through tf_module(root = True).
+#
+# Shares the module's name deliberately: tf_root_module only declares targets
+# suffixed with ".init", ".plan" and so on, so nothing actually collides. That is
+# invisible to buildifier, which cannot expand a macro.
 # buildifier: disable=duplicated-name
 tf_root_module(
     name = "root-mod-remote",
