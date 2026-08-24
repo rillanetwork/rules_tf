@@ -34,6 +34,14 @@ tf.download(
     # prereleases, collapsing duplicates -- so it admits packages on the
     # registry's word and warns, which is the behaviour a registry publishing
     # no signatures leaves. Verification itself is covered by bcr_verified.
+    # Every source shape the module mirror handles. All three resolve to
+    # cloudposse/terraform-null-label, which requires no providers, so the
+    # fixture gains module coverage without a provider download.
+    modules = [
+        "cloudposse/label/null@0.25.0",
+        "cloudposse/label/null//exports@0.25.0",
+        "git::https://github.com/cloudposse/terraform-null-label.git?ref=0.25.0",
+    ],
     provider_verification = "off",
     tfdoc_version = "0.19.0",
     tflint_config = "//tf:toolchain-tflint-config.hcl",
