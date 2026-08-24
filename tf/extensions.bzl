@@ -26,8 +26,27 @@ load(
     TERRAFORM_SHA256SUMS_TEMPLATE = "SHA256SUMS_TEMPLATE",
     TERRAFORM_URL_TEMPLATE = "URL_TEMPLATE",
 )
-load("@rules_tf//tf/toolchains/tfdoc:toolchain.bzl", "tfdoc_download")
-load("@rules_tf//tf/toolchains/tflint:toolchain.bzl", "tflint_download")
+load(
+    "@rules_tf//tf/toolchains/tfdoc:toolchain.bzl",
+    "tfdoc_download",
+    TFDOC_ARCHIVE_TEMPLATE = "ARCHIVE_TEMPLATE",
+    TFDOC_SHA256SUMS_TEMPLATE = "SHA256SUMS_TEMPLATE",
+)
+load(
+    "@rules_tf//tf/toolchains/tflint:plugins.bzl",
+    "parse_tflint_plugins",
+    "resolve_tflint_plugins",
+    "unverified_plugins",
+    "verify_tflint_plugins",
+    "warn_unverified_plugins",
+)
+load(
+    "@rules_tf//tf/toolchains/tflint:toolchain.bzl",
+    "tflint_download",
+    TFLINT_ARCHIVE_TEMPLATE = "ARCHIVE_TEMPLATE",
+    TFLINT_SHA256SUMS_TEMPLATE = "SHA256SUMS_TEMPLATE",
+    TFLINT_URL_TEMPLATE = "URL_TEMPLATE",
+)
 load(
     "@rules_tf//tf/toolchains/tofu:toolchain.bzl",
     "tofu_download",
@@ -106,11 +125,30 @@ def _tf_repositories(ctx):
                 index = index,
                 suffix = "_{}_{}".format(host_detected_os, host_detected_arch),
             )
+
+            # Resolved here rather than in the download repository for the
+            # reason the tf tool archive is: every byte that repository fetches
+            # is then pinned by an attribute, which is what lets it declare
+            # itself reproducible and be served from the repo contents cache.
+            tfdoc_sha256, tfdoc_facts, tfdoc_error = resolve_tool_sha256(
+                ctx,
+                "terraform-docs",
+                version_tag.tfdoc_version,
+                host_detected_os,
+                host_detected_arch,
+                ctx.facts,
+                TFDOC_SHA256SUMS_TEMPLATE,
+                archive_template = TFDOC_ARCHIVE_TEMPLATE,
+            )
+            facts.update(tfdoc_facts)
+
             tfdoc_download(
                 name = tfdoc_repo_name,
                 version = version_tag.tfdoc_version,
                 os = host_detected_os,
                 arch = host_detected_arch,
+                tool_sha256 = tfdoc_sha256,
+                resolve_errors = json.encode([tfdoc_error] if tfdoc_error else []),
             )
             tfdoc_toolchains.append(tfdoc_repo_name)
 
@@ -120,12 +158,82 @@ def _tf_repositories(ctx):
                 index = index,
                 suffix = "_{}_{}".format(host_detected_os, host_detected_arch),
             )
+
+            tflint_sha256, tflint_facts, tflint_error = resolve_tool_sha256(
+                ctx,
+                "tflint",
+                version_tag.tflint_version,
+                host_detected_os,
+                host_detected_arch,
+                ctx.facts,
+                TFLINT_SHA256SUMS_TEMPLATE,
+                archive_template = TFLINT_ARCHIVE_TEMPLATE,
+            )
+            facts.update(tflint_facts)
+            tflint_errors = [tflint_error] if tflint_error else []
+
+            # The config is read here as well as templated into the download
+            # repository: the rulesets it declares are what the extension has to
+            # resolve, and only what it resolves ends up in the lockfile.
+            tflint_config = ctx.read(version_tag.tflint_config)
+            tflint_plugins, plugin_facts, plugin_errors = resolve_tflint_plugins(
+                ctx,
+                parse_tflint_plugins(tflint_config),
+                host_detected_os,
+                host_detected_arch,
+                ctx.facts,
+            )
+            facts.update(plugin_facts)
+            tflint_errors.extend(plugin_errors)
+
+            # Every ruleset hash is known before a byte is fetched, so the
+            # signature check runs here, against the release tflint
+            # authenticates. A recorded mark settles it: that keeps a second
+            # evaluation off the network, and it self-heals a lockfile written
+            # before the check existed, which carries no mark and so verifies
+            # once more.
+            pending_plugins = unverified_plugins(facts, tflint_plugins, platforms)
+            if pending_plugins:
+                if version_tag.tflint_plugin_verification == "off":
+                    warn_unverified_plugins(pending_plugins)
+                elif not tflint_sha256:
+                    # A tflint release that could not be resolved has recorded
+                    # its error already, and nothing can lint without it, so
+                    # the check is left to an evaluation that can reach the
+                    # release.
+                    pass
+                else:
+                    # Fetched only when something is left to verify, and only
+                    # for the host: this copy of tflint is here to check
+                    # signatures, not to lint with.
+                    tflint_errors.extend(verify_tflint_plugins(
+                        ctx,
+                        fetch_lock_tool(
+                            ctx,
+                            "tflint",
+                            version_tag.tflint_version,
+                            host_detected_os,
+                            host_detected_arch,
+                            TFLINT_URL_TEMPLATE,
+                            tflint_sha256,
+                            archive_template = TFLINT_ARCHIVE_TEMPLATE,
+                        ),
+                        tflint_config,
+                        pending_plugins,
+                        facts,
+                        platforms,
+                        "tflint_verify/%s" % tflint_repo_name,
+                    ))
+
             tflint_download(
                 name = tflint_repo_name,
                 version = version_tag.tflint_version,
                 os = host_detected_os,
                 arch = host_detected_arch,
+                tool_sha256 = tflint_sha256,
                 config = version_tag.tflint_config,
+                plugins_json = json.encode(tflint_plugins),
+                resolve_errors = json.encode(tflint_errors),
             )
 
             tflint_toolchains.append(tflint_repo_name)
@@ -269,6 +377,19 @@ _version_tag = tag_class(
             default = "@rules_tf//tf/toolchains/tflint:config.hcl",
             allow_single_file = True,
             cfg = "target",
+        ),
+        "tflint_plugin_verification": attr.string(
+            default = "auto",
+            values = ["auto", "off"],
+            doc = "Whether each mirrored tflint ruleset must match a release whose signature " +
+                  "was verified. 'auto' trusts the verified marks already recorded in " +
+                  "MODULE.bazel.lock and runs `tflint --init` for what they leave: that needs " +
+                  "network access, runs once per release, and is answered from the lockfile " +
+                  "thereafter. It fails for a ruleset tflint cannot check -- one outside " +
+                  "terraform-linters whose plugin block carries no signing_key. 'off' admits " +
+                  "rulesets on the release host's word, warning about each, which is what a " +
+                  "config with no key to hand leaves available. Rulesets a recorded mark " +
+                  "covers are as verified as under 'auto', silently.",
         ),
         "tfdoc_version": attr.string(default = TFDOC_VERSION),
         "mirror": attr.string_list(
