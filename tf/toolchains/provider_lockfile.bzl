@@ -75,7 +75,7 @@ def declared_constraints(declared, default_registry):
     decide which version it names.
 
     A module `terraform init` downloads is not in `declared` and cannot be: it
-    arrives only once `init` has run, and this document is written before that.
+    arrives only once `init` has run, and the lock file is written before that.
     A provider only such a module requires has to be declared by a module Bazel
     does see, as docs/mirror.md sets out.
 
