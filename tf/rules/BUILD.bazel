@@ -9,6 +9,16 @@ exports_files(
     ],
 )
 
+# The module-calls action's script and terraform-docs template, reached by
+# label from the tf_module rule wherever it is instantiated.
+exports_files(
+    glob([
+        "*.sh",
+        "*.yml",
+    ]),
+    visibility = ["//visibility:public"],
+)
+
 filegroup(
     name = "all_files",
     testonly = True,
