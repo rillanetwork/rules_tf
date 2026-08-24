@@ -301,3 +301,39 @@ Providers a module does not declare are left out too. A mirror is shared across 
 providers any one module has nothing to do with - and `init` prunes a block the configuration does not require,
 rewriting the file to do it. That rewrite is the thing this document exists to avoid, so being stocked is not
 enough to be named.
+
+### Providers a downloaded module requires
+
+The declarations the document is rendered from are the ones Bazel can see: a module's own `providers`, and those
+of everything it reaches through `deps`. A module sourced from a registry is outside that set: the document is
+written before `init` runs, and `init` is what downloads the module, so its `required_providers` block does not
+exist yet.
+
+Where such a module requires a provider the configuration does not otherwise name, `init` resolves that provider
+itself and appends what it chose - an appended entry being the same change to the document as a pruned one, and
+reported the same way:
+
+```
+- Reusing previous version of hashicorp/aws from the dependency lock file
+- Finding latest version of hashicorp/random...
+- Installing hashicorp/random v3.3.2...
+```
+
+Declare the address in the root module's `providers` and both halves follow, because the one dict is what
+`versions.tf.json` and the lock document are generated from:
+
+```python
+tf_module(
+    name = "root",
+    providers = {
+        "aws": "hashicorp/aws:5.100.0",
+        # required by the registry module sourced at ./main.tf, not by anything here
+        "random": "hashicorp/random:3.6.0",
+    },
+)
+```
+
+That is a real requirement rather than a note to the renderer. A downloaded module's providers are otherwise
+resolved fresh on every `init`, free to float to whatever the registry offers, and a configuration that never
+names them has nowhere to pin them; the report is the visible edge of that. Declaring the address is what pins
+it, and the report returning is the signal that the upstream module's requirements have moved.
