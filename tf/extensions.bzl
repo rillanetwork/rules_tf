@@ -396,11 +396,11 @@ def _tf_repositories(ctx):
             # to an archive is pinned by that repository's attributes and so is
             # cacheable across workspaces; one that does not is fetched by the
             # tool there and says so.
-            packages = module_packages(closures)
-            coordinates, package_facts = recorded_packages(ctx.facts, packages)
+            module_pkgs = module_packages(closures)
+            coordinates, package_facts = recorded_packages(ctx.facts, module_pkgs)
             facts.update(package_facts)
 
-            pending_packages = unresolved_packages(ctx.facts, packages)
+            pending_packages = unresolved_packages(ctx.facts, module_pkgs)
             if pending_packages:
                 newly, new_package_facts, package_errors = resolve_module_packages(
                     ctx,
@@ -424,7 +424,7 @@ def _tf_repositories(ctx):
                 file = tool_file,
             )
 
-            for p in packages:
+            for p in module_pkgs:
                 store_key = module_store_key(p["source"], p["version"])
                 if store_key in module_repos:
                     continue
