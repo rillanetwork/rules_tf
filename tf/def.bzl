@@ -6,6 +6,7 @@ load("@rules_tf//tf/rules:tf-gen-doc.bzl", _tf_gen_doc = "tf_gen_doc")
 load("@rules_tf//tf/rules:tf-gen-versions.bzl", "tf_gen_versions")
 load("@rules_tf//tf/rules:tf-lint.bzl", "tf_lint_test")
 load("@rules_tf//tf/rules:tf-module.bzl", "tf_artifact", "tf_format_test", "tf_module_deps", "tf_validate_test", _tf_format = "tf_format", _tf_module = "tf_module")
+load("@rules_tf//tf_apply/rules:root.bzl", "declare_root_targets")
 
 srcs_exclude = [
     "**/*.bzl",
@@ -31,12 +32,18 @@ def tf_module(
         experiments = [],
         visibility = ["//visibility:public"],
         tags = [],
-        skip_validation = False):
+        skip_validation = False,
+        root = False,
+        backend = None,
+        tfvars = {},
+        tfvars_deps = {},
+        output_json = False):
     """Declares a terraform module: its sources, generated versions.tf.json, and checks.
 
     Besides the module itself this declares the targets around it -- `srcs`,
     `module`, `deps`, `tgz` for packaging, and the `lint`, `format` and
-    `validate` tests.
+    `validate` tests. With `root = True` it also declares the terraform
+    lifecycle targets, which are otherwise reached through `tf_root_module`.
 
     Args:
       name: name of the module target; also the base name of the tarball.
@@ -55,7 +62,26 @@ def tf_module(
       tags: tags applied to every target declared here.
       skip_validation: skip the validate test, for a module that cannot be
         validated standalone (one taking provider configuration_aliases, say).
+      root: declare this module as a root module, adding the terraform lifecycle
+        targets -- `init`, `plan`, `destroy`, `apply` and the generic `tf` -- each
+        suffixed onto `name`. Requires `backend`.
+      backend: a single-key dict of `{type: config}` describing the Terraform
+        backend. Root modules only.
+      tfvars: a dict of Terraform input variables with arbitrary typed values
+        (strings, numbers, bools, lists, and nested maps). Encoded to JSON and
+        materialized as a `*.auto.tfvars.json` file, so values arrive fully typed
+        in Terraform. Root modules only.
+      tfvars_deps: mapping of tfvars keys to labels; each resolves to the
+        dependency's file path (relative to the module) at analysis time. Root
+        modules only.
+      output_json: whether `<name>.plan` should also emit a JSON-formatted plan.
+        Root modules only.
     """
+
+    if not root:
+        for arg, value in [("backend", backend), ("tfvars", tfvars), ("tfvars_deps", tfvars_deps), ("output_json", output_json)]:
+            if value:
+                fail("%s: %s applies to root modules only; pass root = True to declare one" % (name, arg))
 
     # Normalise provider values so tf_gen_versions sees a uniform shape:
     #   {"alias": {"source": "...", "version": "...", "configuration_aliases": [...]}}.
@@ -155,6 +181,20 @@ def tf_module(
         visibility = ["//visibility:public"],
         tags = tags,
     )
+
+    if root:
+        # The declared artifact rather than ":module": tf_vars takes a single-file
+        # label, and it is also what a standalone tf_root_module is pointed at.
+        declare_root_targets(
+            name = name,
+            module = ":{}".format(name),
+            backend = backend,
+            tfvars = tfvars,
+            tfvars_deps = tfvars_deps,
+            output_json = output_json,
+            tags = tags,
+            visibility = visibility,
+        )
 
 def tf_format(name, modules, **kwargs):
     _tf_format(

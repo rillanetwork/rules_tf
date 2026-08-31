@@ -3,6 +3,7 @@ This module provides macros and rules for initializing, planning, and applying T
 """
 
 load("//tf_apply/rules:defs.bzl", _tf_apply = "tf_apply", _tf_backend = "tf_backend", _tf_cmd = "tf_cmd", _tf_destroy = "tf_destroy", _tf_init = "tf_init", _tf_plan = "tf_plan", _tf_vars = "tf_vars")
+load("//tf_apply/rules:root.bzl", "declare_root_targets")
 
 tf_apply = _tf_apply
 tf_cmd = _tf_cmd
@@ -21,8 +22,11 @@ def tf_root_module(
         output_json = False,
         tags = [],
         visibility = ["//visibility:private"]):
-    """
-    Macro to create a Terraform module and apply rules for initialization, planning, and applying.
+    """Declares the initialize, plan and apply targets for a Terraform root module.
+
+    Use this when the root module's sources live in a different package to the
+    one being declared; for the usual case where they are the same package,
+    `tf_module(root = True)` declares these targets alongside the module itself.
 
     Args:
         name: The name of the Terraform module.
@@ -38,73 +42,13 @@ def tf_root_module(
         visibility: Visibility of the generated targets.
     """
 
-    tf_vars(
-        name = "{}.tfvars".format(name),
-        name_prefix = name,
+    declare_root_targets(
+        name = name,
         module = module,
+        backend = backend,
+        tfvars = tfvars,
         tfvars_deps = tfvars_deps,
-        tfvars = json.encode(tfvars),
-        visibility = visibility,
-    )
-
-    if backend:
-        # Backend is an object with one key, which is the backend type
-        if len(backend.keys()) > 1:
-            fail("backend attribute must have exactly one backend type")
-
-        backend_type = list(backend.keys())[0]
-        backend_config = backend[backend_type]
-
-        tf_backend(
-            name = "{}.backend".format(name),
-            name_prefix = name,
-            type = backend_type,
-            config = backend_config,
-            visibility = visibility,
-        )
-
-    tf_init(
-        name = "{}.init".format(name),
-        module = module,
-        tfvars = ":{}.tfvars".format(name),
-        backend = ":{}.backend".format(name),
-        tags = tags,
-        visibility = visibility,
-    )
-
-    tf_plan(
-        name = "{}.plan".format(name),
-        module = module,
-        tfvars = ":{}.tfvars".format(name),
-        backend = ":{}.backend".format(name),
         output_json = output_json,
-        tags = tags,
-        visibility = visibility,
-    )
-
-    tf_destroy(
-        name = "{}.destroy".format(name),
-        module = module,
-        tfvars = ":{}.tfvars".format(name),
-        backend = ":{}.backend".format(name),
-        tags = tags,
-        visibility = visibility,
-    )
-
-    tf_apply(
-        name = "{}.apply".format(name),
-        module = module,
-        tfvars = ":{}.tfvars".format(name),
-        backend = ":{}.backend".format(name),
-        tags = tags,
-        visibility = visibility,
-    )
-
-    tf_cmd(
-        name = "{}.tf".format(name),
-        module = module,
-        tfvars = ":{}.tfvars".format(name),
-        backend = ":{}.backend".format(name),
         tags = tags,
         visibility = visibility,
     )
