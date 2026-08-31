@@ -30,6 +30,11 @@ rm -rf "$PWD/$TF_DIR/.terraform.lock.hcl"
 rm -rf "$OUT_DIR/.terraform"
 rm -rf "$OUT_DIR/.terraform.lock.hcl"
 
+# Seeded after the wipe above, which would otherwise remove the manifest before
+# init could read it. Remote modules then resolve from the mirror rather than
+# being downloaded again on every init.
+"${PWD}/%TF_MANIFEST_SCRIPT%" "%TF_STORE_TABLE%" "%TF_MODULE_CALLS%" "$TF_DIR"
+
 echo "Running 'terraform init' in directory: $PWD/$TF_DIR"
 
 # Run terraform init

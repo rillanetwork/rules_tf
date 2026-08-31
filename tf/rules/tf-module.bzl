@@ -3,6 +3,7 @@
 load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@rules_pkg//pkg:providers.bzl", "PackageFilegroupInfo", "PackageFilesInfo")
 load("@rules_tf//tf/rules:providers.bzl", "TfArtifactInfo", "TfModuleInfo")
+load("@rules_tf//tf/rules:tf-module-calls.bzl", "MODULE_CALLS_ATTRS", "TFDOC_TOOLCHAIN", "declare_module_calls")
 
 def _artifact_impl(ctx):
     return [
@@ -34,6 +35,8 @@ def _module_impl(ctx):
         transitive = [dep[TfModuleInfo].transitive_srcs if TfModuleInfo in dep else dep.files for dep in ctx.attr.deps],
     )
 
+    calls = declare_module_calls(ctx, all_srcs)
+
     return [
         DefaultInfo(
             files = all_srcs,
@@ -43,8 +46,13 @@ def _module_impl(ctx):
             deps = ctx.attr.deps,
             module_path = ctx.label.package,
             transitive_srcs = all_srcs,
+            calls = calls,
         ),
         ctx.attr.srcs[PackageFilesInfo],
+
+        # Not a default output: the calls file feeds the module manifest rather
+        # than the module, but naming it makes it inspectable and testable.
+        OutputGroupInfo(module_calls = depset([calls])),
     ]
 
 tf_module = rule(
@@ -52,7 +60,8 @@ tf_module = rule(
     attrs = {
         "srcs": attr.label(mandatory = True, providers = [PackageFilesInfo, DefaultInfo]),
         "deps": attr.label_list(providers = [[TfArtifactInfo], [PackageFilegroupInfo, DefaultInfo], [PackageFilesInfo, DefaultInfo]]),
-    },
+    } | MODULE_CALLS_ATTRS,
+    toolchains = [TFDOC_TOOLCHAIN],
 )
 
 def _compute_deps_pfi(s, prefix, files, mapped_files_depsets):
@@ -133,8 +142,16 @@ tf_module_deps = rule(
 
 def _tf_validate_impl(ctx):
     tf_runtime = ctx.toolchains["@rules_tf//:tf_toolchain_type"].runtime
+    module = ctx.attr.module[TfModuleInfo]
+    store = tf_runtime.modules
 
-    cmd = "{tf} -chdir={dir} init -backend=false -input=false -plugin-dir=$PWD/{plugins_mirror} > /dev/null; {tf} -chdir={dir} validate".format(
+    # The manifest is written here rather than built, because its Dir entries
+    # must be absolute and only the running test knows where its runfiles are.
+    # Terraform then installs the local modules around what it finds.
+    cmd = "{manifest} {table} {calls} {dir} && {tf} -chdir={dir} init -backend=false -input=false -plugin-dir=$PWD/{plugins_mirror} > /dev/null; {tf} -chdir={dir} validate".format(
+        manifest = ctx.file._manifest_script.short_path,
+        table = store.table.short_path,
+        calls = module.calls.short_path,
         dir = ctx.attr.module.label.package,
         tf = tf_runtime.tf.short_path,
         plugins_mirror = tf_runtime.mirror.short_path,
@@ -145,16 +162,23 @@ def _tf_validate_impl(ctx):
         content = cmd,
     )
 
-    deps = ctx.attr.module[TfModuleInfo].transitive_srcs.to_list() + tf_runtime.deps
+    deps = module.transitive_srcs.to_list() + tf_runtime.deps + [
+        ctx.file._manifest_script,
+        module.calls,
+    ]
 
     return [DefaultInfo(
-        runfiles = ctx.runfiles(files = deps),
+        runfiles = ctx.runfiles(files = deps, transitive_files = store.files),
     )]
 
 tf_validate_test = rule(
     implementation = _tf_validate_impl,
     attrs = {
         "module": attr.label(providers = [TfModuleInfo], allow_files = True),
+        "_manifest_script": attr.label(
+            default = Label("//tf/rules:module_manifest.sh"),
+            allow_single_file = True,
+        ),
     },
     test = True,
     toolchains = [

@@ -95,6 +95,62 @@ def tflint_plugin_fact_key(source, version, platform):
         platform = platform,
     )
 
+def module_closure_fact_key(source, version):
+    """Fact key under which one declared module's resolved closure is remembered.
+
+    The value carries `modules`: the flattened closure `terraform get` installed,
+    each entry holding the call path relative to the declared module, its
+    source, and its concrete version. Recording the whole closure rather than
+    the declared entry alone is what lets a later evaluation rebuild a
+    `.terraform/modules` manifest without reaching any source, since terraform
+    keys nested modules by call path and resolves them transitively.
+
+    Unlike a provider, a module has no separate resolve/package split: the
+    version a constraint selects and the closure it reaches are one answer from
+    one `terraform get`, and recording them apart would let them disagree.
+
+    Args:
+      source: the module's source, as the manifest spells it.
+      version: the version constraint as written, empty for a source that
+        carries its own ref.
+
+    Returns:
+      The fact key.
+    """
+    return "module/{source}/{version}".format(
+        source = source,
+        version = version,
+    )
+
+def module_package_fact_key(source, version):
+    """Fact key under which one module package's fetch coordinates are remembered.
+
+    The value carries either `download_url` and `sha256`, for a package that
+    reduces to a single archive, or `getter`, naming a source only terraform
+    itself can fetch. That difference is what decides whether the repository
+    holding the package can call itself reproducible, so it is recorded rather
+    than recomputed.
+
+    Keyed by the package, never by a `//subdir` within it: two entries reaching
+    different directories of one repository share a single download.
+
+    Unlike a provider's sha256, which comes from a checksum document the
+    publisher signs, a module registry publishes no checksums at all. The hash
+    here is therefore observed on first fetch and pinned thereafter, so it
+    detects later drift rather than attesting the original bytes.
+
+    Args:
+      source: the package's source, with any subdirectory removed.
+      version: the concrete version, empty for a source carrying its own ref.
+
+    Returns:
+      The fact key.
+    """
+    return "module_package/{source}/{version}".format(
+        source = source,
+        version = version,
+    )
+
 # The platforms a tf toolchain can run on, and so the set whose package
 # coordinates every resolution records -- one lockfile then serves every machine
 # in a team, whichever wrote it. Enumerated rather than discovered because

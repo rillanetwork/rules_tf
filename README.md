@@ -114,6 +114,14 @@ that verified against the signing keys compiled into the terraform binary; the r
 `MODULE.bazel.lock`, so later builds read a pin a publisher signed. `provider_locks` accepts a
 `.terraform.lock.hcl` instead. See [docs/mirror.md](docs/mirror.md#verified-hashes).
 
+### Remote modules
+
+`tf.download` also accepts a `modules` list, which resolves remote terraform modules through the same extension
+and fetches each distinct package once into a shared store. `init` and `validate` then resolve against that
+store rather than the network, and a module calling a source the mirror does not hold fails the build instead
+of quietly downloading it. Terraform otherwise re-downloads modules on every `init`, with no lock file and no
+dedupe. See [docs/modules.md](docs/modules.md).
+
 ### Linting
 
 Every `tf_module` declares a `lint` test that runs tflint over the module's sources. Its config and its ruleset

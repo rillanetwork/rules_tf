@@ -23,6 +23,17 @@ jobs:
           disk-cache: true
           repository-cache: true
 
+      # The deleted_packages list in .bazelrc is hand-maintained: a package
+      # added under tests/ that is missing from it surfaces only as a
+      # toolchain-resolution failure in an unrelated target. Regenerate it and
+      # fail if it moved, so the message names the actual problem. Like the
+      # Lint step, this needs `bazel run` for the workspace directory.
+      - name: Check deleted_packages
+        run: |
+          bazel run @rules_bazel_integration_test//tools:update_deleted_packages \
+            -- --exclude_dir .bazelbsp
+          git diff --exit-code .bazelrc
+
       # Root module only: the integration tests are tagged manual and run in
       # the `tests` job.
       - name: Test
@@ -41,6 +52,14 @@ jobs:
           - macos-latest
 
     runs-on: ${{ matrix.runner }}
+
+    # tflint --init resolves every ruleset through the GitHub releases API,
+    # which allows 60 requests an hour unauthenticated - a quota shared with
+    # every other job leaving the runner's egress address, so it 403s
+    # unpredictably. A token raises it to 5000. .bazelrc forwards the variable
+    # into the test action, whose environment is otherwise scrubbed.
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
       - uses: actions/checkout@v6

@@ -7,6 +7,7 @@ TfModuleInfo = provider(
         "deps",
         "transitive_srcs",
         "module_path",
+        "calls",
     ],
 )
 
@@ -15,5 +16,13 @@ TfArtifactInfo = provider(
     fields = [
         "module",
         "package",
+    ],
+)
+
+TfModuleStoreInfo = provider(
+    doc = "The mirrored terraform module store and the table locating its packages",
+    fields = [
+        "table",
+        "files",
     ],
 )
