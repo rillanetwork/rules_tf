@@ -9,6 +9,12 @@ test:ci --test_strategy=standalone
 
 test --test_output=errors
 
+# A test action's environment is scrubbed, so the nested Bazel that the
+# integration tests drive would run tflint --init unauthenticated against the
+# GitHub releases API and hit its 60-per-hour anonymous quota. Forward the
+# token when the caller has one; unset, this is a no-op.
+test --test_env=GITHUB_TOKEN
+
 # Hides the child modules under tests/ from target expansion while leaving
 # their files globbable from //tests, which .bazelignore would not. To update:
 # `bazel run @rules_bazel_integration_test//tools:update_deleted_packages --
