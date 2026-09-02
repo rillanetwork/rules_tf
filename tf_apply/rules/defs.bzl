@@ -152,7 +152,7 @@ def tf_init_impl(ctx):
         substitutions = {
             "%TF_BIN_PATH%": tf_toolchain.runtime.tf.short_path,
             "%TF_DIR%": ctx.attr.module.label.package,
-            "%TF_PLUGINS_DIR%": tf_toolchain.runtime.mirror.short_path,
+            "%TF_PLUGINS_DIR%": tf_toolchain.runtime.mirror_path,
         },
     )
 
@@ -219,7 +219,6 @@ def tf_plan_impl(ctx):
             "%TF_BIN_PATH%": tf_toolchain.runtime.tf.short_path,
             "%TF_DIR%": ctx.attr.module.label.package,
             "%TF_OUTPUT_JSON%": "1" if ctx.attr.output_json else "0",
-            "%TF_PLUGINS_DIR%": tf_toolchain.runtime.mirror.short_path,
         },
     )
 
@@ -293,7 +292,6 @@ def tf_destroy_impl(ctx):
         substitutions = {
             "%TF_BIN_PATH%": tf_toolchain.runtime.tf.short_path,
             "%TF_DIR%": ctx.attr.module.label.package,
-            "%TF_PLUGINS_DIR%": tf_toolchain.runtime.mirror.short_path,
         },
     )
 
@@ -357,7 +355,6 @@ def tf_apply_impl(ctx):
         substitutions = {
             "%TF_BIN_PATH%": tf_toolchain.runtime.tf.short_path,
             "%TF_DIR%": ctx.attr.module.label.package,
-            "%TF_PLUGINS_DIR%": tf_toolchain.runtime.mirror.short_path,
         },
     )
 
@@ -429,7 +426,6 @@ def tf_cmd_impl(ctx):
         substitutions = {
             "%TF_BIN_PATH%": tf_toolchain.runtime.tf.short_path,
             "%TF_DIR%": ctx.attr.module.label.package,
-            "%TF_PLUGINS_DIR%": tf_toolchain.runtime.mirror.short_path,
         },
     )
 

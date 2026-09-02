@@ -12,19 +12,6 @@ exports_files(
 )
 
 filegroup(
-    name = "standard_package",
-    srcs = glob([
-        "*.bzl",
-    ]) + [
-        "BUILD.bazel",
-    ],
-    visibility = [
-        "//distro:__pkg__",
-        "//tf_apply:__pkg__",
-    ],
-)
-
-filegroup(
     name = "all_files",
     testonly = True,
     srcs = glob(["*"]),

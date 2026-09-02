@@ -7,19 +7,6 @@ exports_files(
     visibility = ["//visibility:public"],
 )
 
-filegroup(
-    name = "standard_package",
-    srcs = glob([
-        "*.bzl",
-    ]) + [
-        "BUILD.bazel",
-    ],
-    visibility = [
-        "//distro:__pkg__",
-        "//tf_apply:__pkg__",
-    ],
-)
-
 # Lets downstream gazelle resolve `@rules_tf//tf_apply:defs.bzl` to `//tf_apply:defs`;
 # deps intentionally empty (see //tf:def).
 bzl_library(

@@ -16,21 +16,6 @@ registry_test_suite()
 
 provider_locks_test_suite()
 
-# The tests themselves are not distributed: they are the only .bzl files here
-# that a consumer never loads, and they depend on bazel_skylib's unittest.
-filegroup(
-    name = "standard_package",
-    srcs = [
-        "BUILD.bazel",
-    ] + glob(
-        ["*.bzl"],
-        exclude = ["*_test.bzl"],
-    ),
-    visibility = [
-        "//tf:__pkg__",
-    ],
-)
-
 exports_files(
     glob(
         ["*.bzl"],

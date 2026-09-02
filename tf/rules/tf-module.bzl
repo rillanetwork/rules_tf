@@ -134,10 +134,13 @@ tf_module_deps = rule(
 def _tf_validate_impl(ctx):
     tf_runtime = ctx.toolchains["@rules_tf//:tf_toolchain_type"].runtime
 
-    cmd = "{tf} -chdir={dir} init -backend=false -input=false -plugin-dir=$PWD/{plugins_mirror} > /dev/null; {tf} -chdir={dir} validate".format(
+    # Nothing mirrored means no path to hand init, so the flag is left off.
+    plugin_dir = " -plugin-dir=$PWD/" + tf_runtime.mirror_path if tf_runtime.mirror_path else ""
+
+    cmd = "{tf} -chdir={dir} init -backend=false -input=false{plugin_dir} > /dev/null; {tf} -chdir={dir} validate".format(
         dir = ctx.attr.module.label.package,
         tf = tf_runtime.tf.short_path,
-        plugins_mirror = tf_runtime.mirror.short_path,
+        plugin_dir = plugin_dir,
     )
 
     ctx.actions.write(
