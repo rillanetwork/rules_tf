@@ -1,15 +1,22 @@
+load(":defs_test.bzl", "defs_test_suite")
+
 exports_files(
     glob([
         "*.sh",
     ]),
 )
 
+# The tests themselves are not exported: they are the only .bzl files here
+# that a consumer never loads, and they depend on bazel_skylib's unittest.
 exports_files(
-    glob([
-        "*.bzl",
-    ]),
+    glob(
+        ["*.bzl"],
+        exclude = ["*_test.bzl"],
+    ),
     visibility = ["//visibility:public"],
 )
+
+defs_test_suite()
 
 filegroup(
     name = "all_files",
