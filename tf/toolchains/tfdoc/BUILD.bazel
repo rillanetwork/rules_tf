@@ -1,19 +1,5 @@
 package(default_applicable_licenses = ["//:license"])
 
-filegroup(
-    name = "standard_package",
-    srcs = [
-        "BUILD.bazel",
-    ] + glob([
-        "*.bzl",
-        "*.tpl",
-        "*.yaml",
-    ]),
-    visibility = [
-        "//tf:__pkg__",
-    ],
-)
-
 exports_files(
     glob([
         "*.bzl",

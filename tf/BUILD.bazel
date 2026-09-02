@@ -9,18 +9,6 @@ exports_files(
     visibility = ["//visibility:public"],
 )
 
-filegroup(
-    name = "standard_package",
-    srcs = glob([
-        "*.bzl",
-    ]) + [
-        "BUILD.bazel",
-    ],
-    visibility = [
-        "//tf:__pkg__",
-    ],
-)
-
 # Lets downstream gazelle resolve `@rules_tf//tf:def.bzl` to `//tf:def`. deps stay
 # empty: load() binds to the exported source file, so deps are Stardoc-only metadata.
 bzl_library(

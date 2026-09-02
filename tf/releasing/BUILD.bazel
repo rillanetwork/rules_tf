@@ -16,17 +16,6 @@ package(
 #     outs = ["relnotes.md"],
 # )
 
-filegroup(
-    name = "standard_package",
-    srcs = ["BUILD.bazel"] + glob([
-        "*.bzl",
-        "*.py",
-    ]),
-    visibility = [
-        "//tf:__pkg__",
-    ],
-)
-
 py_binary(
     name = "print_rel_notes",
     srcs = [
