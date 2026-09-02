@@ -1,2 +1,14 @@
 # The child modules under tests/ are hidden with --deleted_packages in
 # .bazelrc rather than listed here, which would hide their files too.
+
+# Each child module builds in its own workspace, and Bazel does not recognise
+# the convenience symlinks those builds leave behind as its own. Without this a
+# //... expansion from here follows them into the child's output base and tries
+# to load every external repo it finds there, which fails by the thousand
+# because none of those repos are visible from this module. Keep in step with
+# the /tests/*/bazel-* entries in .gitignore.
+tests/bcr/bazel-bcr
+tests/bcr_facts/bazel-bcr_facts
+tests/bcr_mirror_json/bazel-bcr_mirror_json
+tests/bcr_tofu/bazel-bcr_tofu
+tests/bcr_verified/bazel-bcr_verified
