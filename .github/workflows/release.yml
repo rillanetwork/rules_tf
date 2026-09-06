@@ -50,7 +50,26 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6.1.0
+        with:
+          persist-credentials: false
+
+      # The Bazel Central Registry grades archive stability by URL path: only
+      # a /releases/download/ asset counts as stable, so the tarball GitHub
+      # generates for a tag is not enough. The prefix matches GitHub's own so
+      # that source.json's strip_prefix stays valid either way, and
+      # .gitattributes decides what the archive omits.
+      - name: Build the release archive
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          # HEAD is the tagged commit; naming it avoids depending on the tag
+          # ref having been fetched.
+          git archive --format=tar --prefix="rules_tf-${tag#v}/" HEAD \
+            | gzip > "rules_tf-${tag}.tar.gz"
+
       - name: Release
-        run: gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes
+        run: >-
+          gh release create "$GITHUB_REF_NAME" "rules_tf-${GITHUB_REF_NAME}.tar.gz"
+          --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes
         env:
           GH_TOKEN: ${{ github.token }}
