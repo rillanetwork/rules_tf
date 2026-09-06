@@ -69,7 +69,7 @@ attributes are not written to the lockfile - the facts those attributes were der
 
 ```json
 "facts": {
-  "@@rules_tf+//tf:extensions.bzl%tf_repositories": {
+  "@@rilla_rules_tf+//tf:extensions.bzl%tf_repositories": {
     "resolve/registry.terraform.io/hashicorp/random/~> 3.1.0": {"version": "3.1.3"},
     "package/registry.terraform.io/hashicorp/random/3.1.3/linux_amd64": {
       "download_url": "https://releases.hashicorp.com/...linux_amd64.zip",
