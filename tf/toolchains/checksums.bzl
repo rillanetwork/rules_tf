@@ -26,7 +26,17 @@ def get_sha256sum(shasums, file):
 
     return None
 
-def resolve_tool_sha256(ctx, tool, version, os, arch, facts, sha256sums_template):
+DEFAULT_ARCHIVE_TEMPLATE = "{tool}_{version}_{os}_{arch}.zip"
+
+def resolve_tool_sha256(
+        ctx,
+        tool,
+        version,
+        os,
+        arch,
+        facts,
+        sha256sums_template,
+        archive_template = DEFAULT_ARCHIVE_TEMPLATE):
     """Resolves the tool release's sha256, so the download repo is given it rather than fetching it.
 
     Every byte that repository fetches is then pinned by an attribute, which is
@@ -44,6 +54,11 @@ def resolve_tool_sha256(ctx, tool, version, os, arch, facts, sha256sums_template
       arch: the host architecture, in the release's spelling.
       facts: the previously persisted fact table, `module_ctx.facts`.
       sha256sums_template: the release's SHA256SUMS URL, taking `{version}`.
+      archive_template: the archive's name as its SHA256SUMS document spells it,
+        taking `{tool}`, `{version}`, `{os}` and `{arch}`. The four tools all
+        name theirs differently -- terraform and tofu carry the version,
+        tflint does not, terraform-docs joins the platform with dashes -- so the
+        naming is the caller's to state.
 
     Returns:
       A (sha256, facts, error) tuple: sha256 is the host's, facts is the table
@@ -76,7 +91,7 @@ def resolve_tool_sha256(ctx, tool, version, os, arch, facts, sha256sums_template
     new_facts = {}
     for p in wanted:
         p_os, _, p_arch = p.partition("_")
-        sha256 = get_sha256sum(shasums, "{tool}_{version}_{os}_{arch}.zip".format(
+        sha256 = get_sha256sum(shasums, archive_template.format(
             tool = tool,
             version = version,
             os = p_os,
@@ -87,6 +102,9 @@ def resolve_tool_sha256(ctx, tool, version, os, arch, facts, sha256sums_template
 
     host = new_facts.get(tool_fact_key(tool, version, platform))
     if not host:
-        return "", new_facts, "no sha256 for %s_%s_%s.zip in %s" % (tool, version, platform, url)
+        return "", new_facts, "no sha256 for %s in %s" % (
+            archive_template.format(tool = tool, version = version, os = os, arch = arch),
+            url,
+        )
 
     return host["sha256"], new_facts, None
