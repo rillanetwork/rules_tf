@@ -4,6 +4,9 @@
 > with additions including multi-version provider mirrors, `mirror_json` support,
 > inline provider declarations, and rules to init/plan/apply root modules
 > (absorbed from the former `rules_tf_apply` module). Requires Bazel 9 or later.
+>
+> It targets the Bazel Central Registry as `rilla_rules_tf`, since `rules_tf` there belongs
+> to upstream. Labels follow the module name: `@rilla_rules_tf//`.
 
 The Tf rules are useful to validate, lint, format, plan and apply terraform code.
 
@@ -24,16 +27,9 @@ exist on Bazel 8. See [docs/mirror.md](docs/mirror.md#where-the-resolved-mirror-
 To import rules_tf in your project, you first need to add it to your `MODULE.bazel` file:
 
 ```python
-bazel_dep(name = "rules_tf", version = "1.0.0")
-git_override(
-    module_name = "rules_tf",
-    remote      = "https://github.com/rillanetwork/rules_tf",
-    tag         = "v1.0.0",
-    # Or pin to an exact commit for immutability:
-    # commit    = "...",
-)
+bazel_dep(name = "rilla_rules_tf", version = "2.2.0")
 
-tf = use_extension("@rules_tf//tf:extensions.bzl", "tf_repositories", dev_dependency = True)
+tf = use_extension("@rilla_rules_tf//tf:extensions.bzl", "tf_repositories", dev_dependency = True)
 tf.download(
     version = "1.9.5",
     tflint_version = "0.53.0",
@@ -56,7 +52,7 @@ tf.download(
 # )
 
 # Switch to tofu
-# tf = use_extension("@rules_tf//tf:extensions.bzl", "tf_repositories")
+# tf = use_extension("@rilla_rules_tf//tf:extensions.bzl", "tf_repositories")
 # tf.download(
 #    version = "1.6.0",
 #    use_tofu = True,
@@ -125,7 +121,7 @@ Mirror entries may name a registry host other than the default (`registry.terraf
 Once you've imported the rule set, you can then load the tf rules in your `BUILD` files with:
 
 ```python
-load("@rules_tf//tf:def.bzl", "tf_module")
+load("@rilla_rules_tf//tf:def.bzl", "tf_module")
 
 tf_module(
     name = "root-mod-a",
@@ -219,7 +215,7 @@ And you can use `bazel run //:terraform` which uses the same version as configur
 1. Using custom tflint config file
 
 ```python
-load("@rules_tf//tf:def.bzl", "tf_module")
+load("@rilla_rules_tf//tf:def.bzl", "tf_module")
 
 filegroup(
     name = "tflint-custom-config",
@@ -245,7 +241,7 @@ are versioned. It is possible to generate a versions.tf.json file by running
 a dedicated target:
 
 ```python
-load("@rules_tf//tf:def.bzl", "tf_module")
+load("@rilla_rules_tf//tf:def.bzl", "tf_module")
 
 tf_module(
     name = "root-mod-a",
@@ -275,7 +271,7 @@ It is possible to generate a README.md file by running
 a dedicated target for terraform modules:
 
 ```python
-load("@rules_tf//tf:def.bzl", "tf_gen_doc")
+load("@rilla_rules_tf//tf:def.bzl", "tf_gen_doc")
 
 tf_gen_doc(
     name = "tfgendoc",
@@ -292,7 +288,7 @@ bazel run //path/to:tfgendoc
 It is also possible to customize terraform docs config:
 
 ```python
-load("@rules_tf//tf:def.bzl", "tf_gen_doc")
+load("@rilla_rules_tf//tf:def.bzl", "tf_gen_doc")
 
 filegroup(
     name = "tfdoc-config",
@@ -313,7 +309,7 @@ tf_gen_doc(
 It is possible to format terraform files by running a dedicated target:
 
 ```python
-load("@rules_tf//tf:def.bzl", "tf_format")
+load("@rilla_rules_tf//tf:def.bzl", "tf_format")
 
 
 tf_format(
@@ -335,8 +331,8 @@ The `tf_root_module` macro (absorbed from the former `rules_tf_apply` module) pr
 Pair it with a `tf_module` in the same `BUILD.bazel` file:
 
 ```python
-load("@rules_tf//tf:def.bzl", "tf_module")
-load("@rules_tf//tf_apply:defs.bzl", "tf_root_module")
+load("@rilla_rules_tf//tf:def.bzl", "tf_module")
+load("@rilla_rules_tf//tf_apply:defs.bzl", "tf_root_module")
 
 tf_module(
     name = "vpc",
@@ -453,12 +449,12 @@ Unlike `.apply`, the `.tf` target adds no implicit flags (no `-auto-approve`, no
 
 Two versioned `py_binary` tools ship with this ruleset so consuming repos share one implementation of terraform module enumeration and fan-out orchestration. A change to affected-detection or the artifact schema lands here once and every consumer inherits it on the next pin bump.
 
-### `@rules_tf//tools:list_modules`
+### `@rilla_rules_tf//tools:list_modules`
 
 Enumerates `tf_root_module` targets (via `kind(tf_plan, <query_path>)`) and emits a JSON matrix describing each one:
 
 ```bash
-BASE_REF=origin/main bazel run @rules_tf//tools:list_modules -- //terraform/...
+BASE_REF=origin/main bazel run @rilla_rules_tf//tools:list_modules -- //terraform/...
 ```
 
 Each row: `{"package", "module_package", "name", "skip", "affected"}`.
@@ -469,12 +465,12 @@ Each row: `{"package", "module_package", "name", "skip", "affected"}`.
 
 This output is **cloud-neutral by design**: it carries module identity plus the skip/affected classification and nothing tenant-specific. A consumer that keys CI off deployment topology (an account per module, say) decorates these rows with its own fields from its own path convention - the ruleset does not own any tenant's cloud/account layout.
 
-### `@rules_tf//tools:run`
+### `@rilla_rules_tf//tools:run`
 
 Fans out `init`/`plan`/`apply` over the modules under a query, in-process:
 
 ```bash
-bazel run @rules_tf//tools:run -- //terraform/... init plan \
+bazel run @rilla_rules_tf//tools:run -- //terraform/... init plan \
   [--extra_var_file vars.tfvars] [--plan_artifacts_dir out/]
 ```
 
