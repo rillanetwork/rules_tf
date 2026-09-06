@@ -2,3 +2,5 @@
 
 - Resolve the tflint archive sha256 (and its `--init` plugin hashes) in the extension as facts, so `tflint_download` can declare `reproducible = True`.
 - Resolve the tfdoc archive sha256 in the extension as a fact, so `tfdoc_download` can declare `reproducible = True`.
+- Make the release process update the tag references in the README. The Getting Started snippet hardcodes `bazel_dep(..., version = "1.0.0")` and `tag = "v1.0.0"` (README.md:27, README.md:31), so every tag push leaves them stale: they still say 1.0.0 after v2.0.0. Either bump them in a pre-tag step, or have the release workflow rewrite and commit them.
+- Fix the broken ordered-list numbering under "Using Tf Modules" (README.md:219, 241, 272, 311). Every item is written as `1.` and each is followed by a fenced code block starting at column 0, which closes the list, so GitHub renders four separate lists all numbered "1." rather than 1-4. Indent the code blocks to the list content column to keep them inside their items, or drop the list and use headings.
