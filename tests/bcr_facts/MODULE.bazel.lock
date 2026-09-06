@@ -448,7 +448,7 @@
     }
   },
   "facts": {
-    "@@rules_tf+//tf:extensions.bzl%tf_repositories": {
+    "@@rilla_rules_tf+//tf:extensions.bzl%tf_repositories": {
       "package/unreachable.invalid/hashicorp/null/3.1.1/darwin_arm64": {
         "download_url": "https://releases.hashicorp.com/terraform-provider-null/3.1.1/terraform-provider-null_3.1.1_darwin_arm64.zip",
         "sha256": "eff8872458806499889f6927b5d954560f3d74bf20b6043409edf94d26cd906f",

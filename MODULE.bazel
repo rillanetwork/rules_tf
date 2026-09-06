@@ -1,5 +1,5 @@
 module(
-    name = "rules_tf",
+    name = "rilla_rules_tf",
     version = "2.2.0",
     # The provider mirror resolves in the module extension and records the
     # result as extension facts, which Bazel gained in 9.0.
