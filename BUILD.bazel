@@ -50,7 +50,6 @@ filegroup(
         "//tf:all_files",
         "//tf/rules:all_files",
         "//tf/toolchains:all_files",
-        "//tf/toolchains/git:all_files",
         "//tf/toolchains/terraform:all_files",
         "//tf/toolchains/tfdoc:all_files",
         "//tf/toolchains/tflint:all_files",
