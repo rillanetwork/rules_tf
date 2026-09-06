@@ -470,7 +470,7 @@
     }
   },
   "facts": {
-    "@@rules_tf+//tf:extensions.bzl%tf_repositories": {
+    "@@rilla_rules_tf+//tf:extensions.bzl%tf_repositories": {
       "h1/registry.terraform.io/hashicorp/null/3.1.1": {
         "hashes": "71sNUDvmiJcijsvfXpiLCz0lXIBSsEJjMxljt7hxMhw=,Pctug/s/2Hg5FJqjYcTM0kPyx3AoYK1MpRWO0T9V2ns=,YvH6gTaQzGdNv+SKTZujU1O0bO+Pw6vJHOPhqgN8XNs=,ZD4wyZ0KJzt5s2mD0xD7paJlVONNicLvZKdgtezz02I="
       },
