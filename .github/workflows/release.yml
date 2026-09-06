@@ -43,7 +43,21 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      # The Bazel Central Registry grades archive stability by URL path: only
+      # a /releases/download/ asset counts as stable, so the tarball GitHub
+      # generates for a tag is not enough. The prefix matches GitHub's own so
+      # that source.json's strip_prefix stays valid either way, and
+      # .gitattributes decides what the archive omits.
+      - name: Build the release archive
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          # HEAD is the tagged commit; naming it avoids depending on the tag
+          # ref having been fetched.
+          git archive --format=tar --prefix="rules_tf-${tag#v}/" HEAD \
+            | gzip > "rules_tf-${tag}.tar.gz"
+
       - name: Release
         uses: softprops/action-gh-release@v3
         with:
           generate_release_notes: true
+          files: rules_tf-${{ github.ref_name }}.tar.gz
