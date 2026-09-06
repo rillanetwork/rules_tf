@@ -1,0 +1,40 @@
+---
+# Platforms mirror what CI covers. Windows is left out: the toolchains wrap
+# their binaries in shell scripts, and nothing here has ever been exercised
+# there.
+matrix:
+  platform: ["debian11", "ubuntu2204", "macos_arm64"]
+  # The module declares bazel_compatibility = [">=9.0.0"]: the provider mirror
+  # records its resolution as extension facts, which Bazel gained in 9.0.
+  bazel: ["9.*"]
+
+tasks:
+  verify_targets:
+    name: "Verify build targets"
+    platform: ${{ platform }}
+    bazel: ${{ bazel }}
+    build_targets:
+      # Not //..., which would reach tests/ and lint/. Those need
+      # dev_dependency modules, which are absent when this module is not the
+      # root, and the --deleted_packages that hides the child modules under
+      # tests/ lives in .bazelrc, which applies only to a root workspace.
+      - "@rilla_rules_tf//tf/..."
+      - "@rilla_rules_tf//tf_apply/..."
+      - "@rilla_rules_tf//tools/..."
+      - "@rilla_rules_tf//:all"
+      # Aliases into the dev-only multitool hub.
+      - "-@rilla_rules_tf//tools:shellcheck"
+      - "-@rilla_rules_tf//tools:actionlint"
+
+bcr_test_module:
+  module_path: "tests/bcr"
+  matrix:
+    platform: ["debian11", "ubuntu2204", "macos_arm64"]
+    bazel: ["9.*"]
+  tasks:
+    run_tests:
+      name: "Run test module"
+      platform: ${{ platform }}
+      bazel: ${{ bazel }}
+      test_targets:
+        - "//..."
