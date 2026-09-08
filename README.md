@@ -475,3 +475,8 @@ bazel run @rilla_rules_tf//tools:run -- //terraform/... init plan \
 ```
 
 With `--plan_artifacts_dir` (and `plan` among the actions) it copies each module's `plan.tfplan.json` to `<package>--<name>.json`, writes an error envelope for failed plans, and emits a `modules.json` matrix - best-effort reporting that never fails the run.
+
+## Contact
+
+For questions about this ruleset, or about consuming it outside Rilla: <opensource@rilla.network>.
+Maintainers are listed by GitHub handle in [`.bcr/metadata.template.json`](.bcr/metadata.template.json).
