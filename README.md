@@ -480,3 +480,8 @@ Masks sensitive values in a `terraform show -json` plan, reading a file (or `-` 
 ```bash
 bazel run @rilla_rules_tf//tools:redact_plan_json -- plan.json redacted.json   # or - for stdin/stdout
 ```
+
+## Contact
+
+For questions about this ruleset, or about consuming it outside Rilla: <opensource@rilla.network>.
+Maintainers are listed by GitHub handle in [`.bcr/metadata.template.json`](.bcr/metadata.template.json).
