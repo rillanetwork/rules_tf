@@ -57,3 +57,21 @@ done < <(bit::bazel cquery 'kind("tf_gen_versions rule", //...)' --output files)
 echo "--- root module apply rules"
 bit::bazel run //tf/root-modules/root-mod-a:root-mod-a.init
 bit::bazel run //tf/root-modules/root-mod-a:root-mod-a.plan -- -lock=false
+
+# Two roots over one module, interleaved: both are initialized before either is
+# planned, so a state directory shared between them would hand the first root
+# the second's backend, and a shared plan would be overwritten.
+echo "--- root modules sharing a module"
+shared=//tf/root-modules/root-mod-shared
+bit::bazel run "${shared}:one.init"
+bit::bazel run "${shared}:two.init"
+bit::bazel run "${shared}:one.plan" -- -lock=false
+bit::bazel run "${shared}:two.plan" -- -lock=false
+
+for root in one two; do
+  plan_json="bazel-tf/tf/root-modules/root-mod-shared/${root}/plan.tfplan.json"
+  if ! grep -q "\"root_name\":{\"value\":\"${root}\"}" "${plan_json}"; then
+    echo >&2 "Expected ${plan_json} to hold the plan for root ${root}."
+    exit 1
+  fi
+done

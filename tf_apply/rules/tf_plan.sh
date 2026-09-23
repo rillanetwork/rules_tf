@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 
 # Invokes `terraform plan` in the specified Terraform directory.
-# The output plan file is symlinked to bazel-tf on the workspace root.
+# The output plan file is symlinked into the root module's own directory under
+# bazel-tf on the workspace root.
 
 set -euo pipefail
 
@@ -19,7 +20,7 @@ if [ $# -gt 0 ]; then
     echo "Additional terraform arguments provided: $*"
 fi
 
-OUT_DIR="$BUILD_WORKSPACE_DIRECTORY/bazel-tf/$TF_DIR"
+OUT_DIR="$BUILD_WORKSPACE_DIRECTORY/bazel-tf/%TF_STATE_DIR%"
 
 # Check .terraform directory and .terraform.lock.hcl file
 if [ ! -d "$OUT_DIR/.terraform" ]; then

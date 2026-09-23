@@ -113,52 +113,34 @@ def module_entry(target: str) -> dict[str, object]:
     return {"package": package, "name": name, "skip": False, "affected": True}
 
 
-def resolve_module_pkg(target: str, workspace_root: Path) -> Optional[str]:
-    """Return the package of the root module's underlying ``module``.
+def state_dir(target: str) -> str:
+    """Return the root module's directory under ``bazel-tf/``.
 
-    ``//terraform/local:local`` -> ``terraform/stacks/local`` (via
-    ``labels(module, {target}.plan)``). That package keys the output dir
-    ``bazel-tf/<pkg>/`` where rules_tf (>= v1.0.0, formerly rules_tf_apply >= v0.2.1) writes
-    ``plan.tfplan.json``. Returns ``None`` if the query fails — the caller
-    treats that as best-effort skip.
+    ``//terraform/local:local`` -> ``terraform/local/local``. rules_tf keys each
+    root module's state and plan by the root's own label, so this needs no
+    query even when the root points ``module =`` at another package.
     """
-    result = subprocess.run(
-        ["bazel", "query", f"labels(module, {target}.plan)"],
-        capture_output=True,
-        text=True,
-        cwd=workspace_root,
-    )
-    if result.returncode != 0 or not result.stdout.strip():
-        return None
-    label = result.stdout.strip().splitlines()[0]  # e.g. //terraform/stacks/local:local
-    return label.removeprefix("//").partition(":")[0]
+    package, _, name = target.removeprefix("//").partition(":")
+    return f"{package}/{name}" if package else name
 
 
 def copy_plan_json_artifact(
     plan_artifacts_dir: Path,
     target: str,
     workspace_root: Path,
-    module_pkg: Optional[str],
 ) -> None:
     """Best-effort: copy the plan step's ``plan.tfplan.json`` into the artifacts dir.
 
-    rules_tf (>= v1.0.0, formerly rules_tf_apply >= v0.2.1), for modules built with ``output_json = True``,
-    writes ``plan.tfplan.json`` into ``bazel-tf/<module_pkg>/`` during the
-    ``.plan`` step. Copy it to ``plan_artifacts_dir`` under the contract name
+    rules_tf, for modules built with ``output_json = True``, writes
+    ``plan.tfplan.json`` into ``bazel-tf/<state_dir>/`` during the ``.plan``
+    step. Copy it to ``plan_artifacts_dir`` under the contract name
     ``plan_artifact_filename(target)`` (e.g. ``terraform--local--local.json``).
 
     Emission is best-effort reporting — plan/apply success is the real signal —
-    so an unresolved module (``module_pkg is None``) or a missing emitted file
-    must be warned to stderr (include ``[WARN]``) and skipped, never raised.
+    so a missing emitted file must be warned to stderr (include ``[WARN]``) and
+    skipped, never raised.
     """
-    if module_pkg is None:
-        print(
-            f"[WARN] Could not resolve module for {target}; skipping plan JSON",
-            file=sys.stderr,
-        )
-        return
-
-    src = workspace_root / "bazel-tf" / module_pkg / "plan.tfplan.json"
+    src = workspace_root / "bazel-tf" / state_dir(target) / "plan.tfplan.json"
     if not src.exists():
         print(f"[WARN] No plan JSON emitted for {target} at {src}", file=sys.stderr)
         return
@@ -287,10 +269,7 @@ def run_terraform_actions(
 
         # Copy the plan JSON emitted by the plan step after a successful plan.
         if action == "plan" and plan_artifacts_dir is not None:
-            module_pkg = resolve_module_pkg(target, workspace_root)
-            copy_plan_json_artifact(
-                plan_artifacts_dir, target, workspace_root, module_pkg
-            )
+            copy_plan_json_artifact(plan_artifacts_dir, target, workspace_root)
 
     return results
 
@@ -318,7 +297,7 @@ def main():
         type=str,
         help=(
             "If set (and 'plan' is among the actions), copy each module's "
-            "plan JSON (emitted by the plan step as bazel-tf/<module>/"
+            "plan JSON (emitted by the plan step as bazel-tf/<package>/<name>/"
             "plan.tfplan.json) to this directory as <package>--<name>.json "
             "(failed plans get an error envelope), plus a modules.json "
             "describing the planned matrix. Relative paths are resolved against "

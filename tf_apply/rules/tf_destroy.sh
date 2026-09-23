@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 
 # Invokes `terraform plan -destroy` in the specified Terraform directory.
-# The output destroy plan file is written to plan.tfplan and symlinked to
-# bazel-tf on the workspace root, so a subsequent `bazel run <mod>.apply`
-# will apply the destroy plan.
+# The output destroy plan file is written to plan.tfplan and symlinked into the
+# root module's own directory under bazel-tf on the workspace root, so a
+# subsequent `bazel run <mod>.apply` will apply the destroy plan.
 
 set -euo pipefail
 
@@ -20,7 +20,7 @@ if [ $# -gt 0 ]; then
     echo "Additional terraform arguments provided: $*"
 fi
 
-OUT_DIR="$BUILD_WORKSPACE_DIRECTORY/bazel-tf/$TF_DIR"
+OUT_DIR="$BUILD_WORKSPACE_DIRECTORY/bazel-tf/%TF_STATE_DIR%"
 
 # Check .terraform directory and .terraform.lock.hcl file
 if [ ! -d "$OUT_DIR/.terraform" ]; then
