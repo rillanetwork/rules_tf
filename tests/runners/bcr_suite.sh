@@ -75,3 +75,14 @@ for root in one two; do
     exit 1
   fi
 done
+
+# Each apply executes the plan its own root saved, and extra arguments must land
+# before the plan file, which terraform only takes as the last positional.
+for root in one two; do
+  apply_out="$(bit::bazel run "${shared}:${root}.apply" -- -lock=false -no-color)"
+  echo "${apply_out}"
+  if ! grep -q "root_name = \"${root}\"" <<<"${apply_out}"; then
+    echo >&2 "Expected ${root}.apply to apply the plan for root ${root}."
+    exit 1
+  fi
+done
