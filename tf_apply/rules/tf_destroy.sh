@@ -7,8 +7,9 @@
 
 set -euo pipefail
 
-TF_BIN_PATH="${PWD}/%TF_BIN_PATH%"
-TF_DIR="%TF_DIR%"
+tf_bin="${PWD}/%tf_bin%"
+# The module's package inside this target's runfiles tree, which is unique to the root and command.
+work_dir="${PWD}/%module_dir%"
 
 if [ -z "${BUILD_WORKSPACE_DIRECTORY:-}" ]; then
     echo "BUILD_WORKSPACE_DIRECTORY is not set. Please set it before running this script."
@@ -20,33 +21,33 @@ if [ $# -gt 0 ]; then
     echo "Additional terraform arguments provided: $*"
 fi
 
-OUT_DIR="$BUILD_WORKSPACE_DIRECTORY/bazel-tf/%TF_STATE_DIR%"
+state_dir="$BUILD_WORKSPACE_DIRECTORY/bazel-tf/%state_dir%"
 
 # Check .terraform directory and .terraform.lock.hcl file
-if [ ! -d "$OUT_DIR/.terraform" ]; then
-    echo ".terraform directory does not exist in $OUT_DIR please run 'terraform_init' first."
+if [ ! -d "$state_dir/.terraform" ]; then
+    echo ".terraform directory does not exist in $state_dir please run 'terraform_init' first."
     exit 1
 fi
 
-if [ ! -f "$OUT_DIR/.terraform.lock.hcl" ]; then
-    echo ".terraform.lock.hcl file does not exist in $OUT_DIR please run 'terraform_init' first."
+if [ ! -f "$state_dir/.terraform.lock.hcl" ]; then
+    echo ".terraform.lock.hcl file does not exist in $state_dir please run 'terraform_init' first."
     exit 1
 fi
 
 # symlink the .terraform directory from the output directory
 # Ensure that any existing .terraform directory or .terraform.lock.hcl file is removed first
-test -d "$TF_DIR/.terraform" && rm -rf "$TF_DIR/.terraform"
-test -f "$TF_DIR/.terraform.lock.hcl" && rm -rf "$TF_DIR/.terraform.lock.hcl"
-test -f "$TF_DIR/plan.tfplan" && rm -rf "$TF_DIR/plan.tfplan"
+test -d "$work_dir/.terraform" && rm -rf "$work_dir/.terraform"
+test -f "$work_dir/.terraform.lock.hcl" && rm -rf "$work_dir/.terraform.lock.hcl"
+test -f "$work_dir/plan.tfplan" && rm -rf "$work_dir/plan.tfplan"
 
-ln -sfn "$OUT_DIR/.terraform" "$TF_DIR/.terraform"
-ln -sfn "$OUT_DIR/.terraform.lock.hcl" "$TF_DIR/.terraform.lock.hcl"
+ln -sfn "$state_dir/.terraform" "$work_dir/.terraform"
+ln -sfn "$state_dir/.terraform.lock.hcl" "$work_dir/.terraform.lock.hcl"
 
 # Drop the previous plan before planning, so a failed destroy plan cannot leave
 # an earlier forward plan behind for .apply to execute.
-rm -f "$OUT_DIR/plan.tfplan" "$OUT_DIR/plan.tfplan.json"
+rm -f "$state_dir/plan.tfplan" "$state_dir/plan.tfplan.json"
 
-$TF_BIN_PATH -chdir="$TF_DIR" plan -destroy -input=false -out="plan.tfplan" "$@"
+$tf_bin -chdir="$work_dir" plan -destroy -input=false -out="plan.tfplan" "$@"
 
 # symlink the destroy plan output to the output directory so .apply can consume it
-ln -sfn "$PWD/$TF_DIR/plan.tfplan" "$OUT_DIR/plan.tfplan"
+ln -sfn "$work_dir/plan.tfplan" "$state_dir/plan.tfplan"
