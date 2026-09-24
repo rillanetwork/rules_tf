@@ -11,46 +11,16 @@ It needs no `terraform init` and no provider mirror - only the tflint toolchain,
 
 ## Configuring tflint
 
-tflint takes its behaviour from an HCL config. rules_tf ships
-[a default one](../tf/toolchains/tflint/config.hcl) that reports in `compact` format and enables most of the
-built-in terraform ruleset: documented variables and outputs, a standard module structure, pinned provider and
-terraform versions.
-
-Replace it for the whole workspace with `tflint_config` on the `tf.download` tag:
+tflint takes its behaviour from an HCL config. 
+rules_tf ships [a default one](../tf/toolchains/tflint/config.hcl) that reports in `compact` format 
+and enables most of the built-in terraform ruleset.
+You can replace it with `tflint_config` on the `tf.download` tag or `tf_module` declaration:
 
 ```python
 tf.download(
     version = "1.9.5",
     tflint_config = "//terraform:tflint.hcl",
     mirror = [...],
-)
-```
-
-Or for one module, with `tflint_config` on `tf_module`:
-
-```python
-tf_module(
-    name = "mod-a",
-    providers = {
-        "random": "hashicorp/random:3.3.2",
-    },
-    tf_version = ">= 1.9",
-    tflint_config = "my-tflint-config.hcl",
-)
-```
-
-Neither merges: the config replaces the one it overrides outright, so write yours as a copy of that one.
-
-`tflint_extra_args` on `tf_module` passes further flags to tflint:
-
-```python
-tf_module(
-    name = "mod-a",
-    providers = {
-        "random": "hashicorp/random:3.3.2",
-    },
-    tf_version = ">= 1.9",
-    tflint_extra_args = ["--minimum-failure-severity=error"],
 )
 ```
 
@@ -72,22 +42,12 @@ plugin "aws" {
 }
 ```
 
-A block naming no `source` is built into the tflint binary and downloads nothing. Anything with a `source` needs a
-`version`, and the source must be a `github.com/<owner>/<repo>` repository.
+Each ruleset's sha256 is resolved for every platform and recorded in `MODULE.bazel.lock` as extension facts.
 
-Only the toolchain-wide config is read for this, so a per-module config cannot introduce a ruleset of its own. It
-can use one the toolchain config mirrored, by declaring the same `plugin` block.
+## Release Signatures
 
-Each ruleset's sha256 is resolved for every platform and recorded in `MODULE.bazel.lock` as extension facts, so a
-lockfile written on one machine covers the rest of the team and CI, and later builds reach no release API. It is
-the same mechanism as [the provider mirror's](mirror.md#where-the-resolved-mirror-is-recorded).
-
-## Signing keys
-
-A ruleset is only mirrored if tflint can verify the release's signature. That holds for rulesets under
-`terraform-linters`, which tflint checks against its own key, and for anyone else's if the plugin block carries the
-publisher's key:
-
+If you include a signing key in the plugin block, the ruleset will verify any mirrored plugins against the release's 
+signature, and fail if it doesn't validate:
 ```hcl
 plugin "custom" {
   enabled = true
@@ -102,24 +62,12 @@ plugin "custom" {
 }
 ```
 
-Without one the build fails, naming the block. Where the publisher's key is unavailable,
-`tflint_plugin_verification = "off"` accepts a ruleset unverified, warning about each:
-
-```python
-tf.download(
-    version = "1.9.5",
-    tflint_config = "//terraform:tflint.hcl",
-    tflint_plugin_verification = "off",
-    mirror = [...],
-)
-```
-
-The hash is still pinned, so only the first resolution is taken on trust: a later fetch of different bytes fails.
-Rulesets already verified stay verified.
+If the publisher's key is unavailable, you can disable verification with `tflint_plugin_verification = "off"` on 
+the `tf.download` tag. (The hash is still pinned, so only the first resolution is taken on trust.)
 
 ## Running tflint yourself
 
-`@tf_toolchains//:tflint` is the tflint binary the toolchain downloaded, which an alias makes runnable:
+`@tf_toolchains//:tflint` is the tflint binary, and you can use an alias to make it easily runnable:
 
 ```python
 alias(
@@ -127,6 +75,3 @@ alias(
     actual = "@tf_toolchains//:tflint",
 )
 ```
-
-`bazel run //:tflint` uses the same version the lint tests do. It is the bare binary, without the toolchain's
-config or its mirrored rulesets.
