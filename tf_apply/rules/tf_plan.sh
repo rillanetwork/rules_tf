@@ -45,6 +45,10 @@ fi
 ln -sfn "$OUT_DIR/.terraform" "$TF_DIR/.terraform"
 ln -sfn "$OUT_DIR/.terraform.lock.hcl" "$TF_DIR/.terraform.lock.hcl"
 
+# Drop the previous plan before planning, so a failed plan cannot leave an
+# earlier plan (such as one from .destroy) behind for .apply to execute.
+rm -f "$OUT_DIR/plan.tfplan" "$OUT_DIR/plan.tfplan.json"
+
 $TF_BIN_PATH -chdir="$TF_DIR" plan -input=false -out="plan.tfplan" "$@"
 
 # symlink the plan output to the output directory

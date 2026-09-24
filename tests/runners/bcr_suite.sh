@@ -86,3 +86,23 @@ for root in one two; do
     exit 1
   fi
 done
+
+# A plan that fails must not leave the previous plan for .apply to execute: a
+# destroy plan followed by a failing forward plan would otherwise apply the
+# destroy.
+echo "--- failed plan discards the previous plan"
+bit::bazel run "${shared}:one.destroy" -- -lock=false
+if bit::bazel run "${shared}:one.plan" -- -lock=false -var=undeclared=1; then
+  echo >&2 "Expected one.plan to fail on an undeclared variable."
+  exit 1
+fi
+if apply_out="$(bit::bazel run "${shared}:one.apply" -- -lock=false -no-color 2>&1)"; then
+  echo "${apply_out}"
+  echo >&2 "Expected one.apply to refuse to run without a plan."
+  exit 1
+fi
+echo "${apply_out}"
+if ! grep -q "plan.tfplan file does not exist" <<<"${apply_out}"; then
+  echo >&2 "Expected one.apply to fail for want of a plan."
+  exit 1
+fi

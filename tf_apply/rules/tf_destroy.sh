@@ -42,6 +42,10 @@ test -f "$TF_DIR/plan.tfplan" && rm -rf "$TF_DIR/plan.tfplan"
 ln -sfn "$OUT_DIR/.terraform" "$TF_DIR/.terraform"
 ln -sfn "$OUT_DIR/.terraform.lock.hcl" "$TF_DIR/.terraform.lock.hcl"
 
+# Drop the previous plan before planning, so a failed destroy plan cannot leave
+# an earlier forward plan behind for .apply to execute.
+rm -f "$OUT_DIR/plan.tfplan" "$OUT_DIR/plan.tfplan.json"
+
 $TF_BIN_PATH -chdir="$TF_DIR" plan -destroy -input=false -out="plan.tfplan" "$@"
 
 # symlink the destroy plan output to the output directory so .apply can consume it
