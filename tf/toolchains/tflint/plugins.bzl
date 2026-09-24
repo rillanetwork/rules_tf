@@ -1,15 +1,4 @@
-"""Resolving the tflint rulesets a config declares, and fetching what it names.
-
-`parse_tflint_plugins` reads a config's `plugin` blocks. `resolve_tflint_plugins`
-and `verify_tflint_plugins` run in the module extension, turning each block into
-a per-platform sha256 returned as facts. `download_tflint_plugins` runs in the
-download repository, fetching those releases against those hashes.
-
-Together they replace `tflint --init`, which the download repository used to
-shell out to: `--init` chooses for itself what to fetch, so identical attributes
-did not pin identical contents. The signature check `--init` performs is kept, by
-running it in the extension when a ruleset's facts are first minted.
-"""
+"""Parses, resolves, verifies and downloads the tflint rulesets a config declares."""
 
 load("@rules_tf//tf/toolchains:checksums.bzl", "get_sha256sum")
 load(
@@ -30,7 +19,6 @@ _OFFICIAL_OWNER = "terraform-linters"
 # The binary a ruleset archive holds, named for the plugin, not its repository.
 _BINARY_TEMPLATE = "tflint-ruleset-{name}"
 
-# `--init` fetches a release per ruleset, so this bounds downloads.
 _INIT_TIMEOUT = 1800
 
 _RELEASE_URL_TEMPLATE = "https://{source}/releases/download/v{version}/{file}"
@@ -101,11 +89,8 @@ def parse_tflint_plugins(config):
       config: contents of a tflint config file.
 
     Returns:
-      One {"name", "source", "version", "repo", "signing_key"} dict per declared
-      ruleset, in declaration order. `signing_key` records only that the block
-      carries one; the key itself stays in the config tflint reads it from.
-      Fails on a source without a version, or a source that is not a GitHub
-      repository.
+      A {"name", "source", "version", "repo", "signing_key"} dict per ruleset,
+      where `signing_key` is a bool.
     """
     plugins = []
     current = None
@@ -197,13 +182,7 @@ def parse_tflint_plugins(config):
     return declared
 
 def resolve_tflint_plugins(ctx, plugins, os, arch, facts):
-    """Resolves every declared ruleset's release sha256, for every platform.
-
-    Runs in the module extension, so the hashes come back as facts that bzlmod
-    persists in `MODULE.bazel.lock`. One checksum document covers every platform
-    a ruleset publishes, so resolving all of `MIRROR_PLATFORMS` costs what
-    resolving the host alone would, and a lockfile written on one machine serves
-    the rest.
+    """Resolves each ruleset's sha256 for the host and every one of `MIRROR_PLATFORMS`.
 
     Args:
       ctx: the module extension's `module_ctx`.
@@ -213,12 +192,8 @@ def resolve_tflint_plugins(ctx, plugins, os, arch, facts):
       facts: the persisted fact table, `module_ctx.facts`.
 
     Returns:
-      A (resolved, facts, errors) tuple: resolved carries each ruleset with the
-      host's `download_url` and `sha256`, facts is the table to hand back, and
-      errors names every ruleset that could not be resolved. Errors are
-      returned rather than raised because extension evaluation is not lazy: the
-      caller defers them to the download repository, which fails when a target
-      actually needs tflint.
+      (resolved, facts, errors): resolved adds the host's `download_url` and
+      `sha256`, and errors are for the caller to defer.
     """
     platform = "%s_%s" % (os, arch)
 
@@ -229,9 +204,8 @@ def resolve_tflint_plugins(ctx, plugins, os, arch, facts):
     new_facts = {}
     errors = []
 
-    # A ruleset already remembered for the host asks nothing. Its other
-    # platforms are re-emitted to survive: facts are replaced wholesale by what
-    # this evaluation returns.
+    # A ruleset already recorded for the host needs no fetch. Its facts are
+    # re-emitted, since the returned table replaces the old one wholesale.
     pending = []
     for p in plugins:
         remembered = {}
@@ -326,12 +300,7 @@ def resolve_tflint_plugins(ctx, plugins, os, arch, facts):
     return resolved, new_facts, errors
 
 def unverified_plugins(facts, plugins, platforms):
-    """The rulesets whose recorded coordinates carry no verification yet.
-
-    One signature covers a release's whole `checksums.txt`, so a release is
-    pending while any platform's fact still lacks the flag. A fact carrying no
-    `verified` at all -- what a lockfile predating this check holds -- verifies
-    once and settles.
+    """The rulesets with a recorded platform not yet marked `verified`.
 
     Args:
       facts: the fact table this evaluation will return.
@@ -377,18 +346,10 @@ def _file_sha256(ctx, path, output):
     return result.sha256
 
 def verify_tflint_plugins(ctx, tflint, config, plugins, facts, platforms, workdir):
-    """Checks each ruleset's recorded hashes against the release whose signature tflint verified.
+    """Checks recorded hashes against the checksums.txt `tflint --init` authenticates.
 
-    `tflint --init` is run once over the config as written, which is what puts a
-    third-party ruleset's `signing_key` in front of tflint. Rulesets tflint has
-    no way to check are refused before it runs, since `--init` installs those
-    with a warning and still exits 0.
-
-    Exiting 0 only says tflint authenticated a document of its own fetching, so
-    the binary is what ties that to the hashes recorded here: the archive the
-    host's recorded sha256 pins must hold the binary `--init` installed. That
-    corroborates the document, and every recorded hash is then checked against
-    it, not just the host's.
+    The binary `--init` installs must match the one in the host's pinned
+    archive, which ties that document to the recorded hashes.
 
     Args:
       ctx: the module extension's `module_ctx`.
@@ -396,10 +357,8 @@ def verify_tflint_plugins(ctx, tflint, config, plugins, facts, platforms, workdi
       config: contents of the toolchain-wide tflint config.
       plugins: rulesets from `resolve_tflint_plugins`.
       facts: the fact table this evaluation will return; marked in place.
-      platforms: the platforms whose coordinates were resolved.
-      workdir: directory to install and unpack into, relative to the
-        extension's working directory. One per download tag: two tags carry
-        two configs and must not share a plugin directory.
+      platforms: the platforms resolved.
+      workdir: scratch directory, unique per download tag.
 
     Returns:
       Errors for the caller to defer.
@@ -427,9 +386,8 @@ def verify_tflint_plugins(ctx, tflint, config, plugins, facts, platforms, workdi
 
     ctx.report_progress("Verifying %d tflint ruleset(s)" % len(verifiable))
 
-    # In flight before `--init` runs, which fetches a release per ruleset and is
-    # the long pole. Fetched again rather than carried over from the resolution:
-    # a ruleset resolved from the lockfile never had a document read at all.
+    # Started before the slow `--init`. Refetched, since a ruleset resolved from
+    # the lockfile never read one.
     pending = []
     for index, p in enumerate(verifiable):
         url = _CHECKSUMS_URL_TEMPLATE.format(source = p["source"], version = p["version"])
@@ -583,18 +541,13 @@ def verify_tflint_plugins(ctx, tflint, config, plugins, facts, platforms, workdi
             )
             continue
 
-        # Marked only once nothing is contradicted, so a release settles whole:
-        # a half-marked one would never report the mismatch again.
+        # All or nothing: a half-marked release would never report the mismatch again.
         facts.update(marked)
 
     return errors
 
 def download_tflint_plugins(ctx, plugins, plugin_dir):
     """Unpacks every resolved ruleset into the layout tflint loads plugins from.
-
-    Coordinates arrive already resolved, so this reaches no release API: known
-    URLs against known hashes. The directory is created even when nothing is
-    declared, since the BUILD template exports it either way.
 
     Args:
       ctx: the download repository's `repository_ctx`.
@@ -611,8 +564,7 @@ def download_tflint_plugins(ctx, plugins, plugin_dir):
 
     staged = []
     for p in plugins:
-        # download + extract rather than download_and_extract: only `download`
-        # accepts block = False. The staged zip is deleted once unpacked.
+        # Downloaded and extracted as separate steps, so downloads run concurrently.
         archive = "tflint_plugin_{repo}_{version}.zip".format(
             repo = p["repo"],
             version = p["version"],
@@ -651,14 +603,12 @@ def download_tflint_plugins(ctx, plugins, plugin_dir):
         ctx.extract(archive = s["archive"], output = s["output"])
         ctx.delete(s["archive"])
 
-        # tflint loads a plugin by name, so an archive holding a differently
-        # named binary would install cleanly and then not be found.
-        binary = "%s/tflint-ruleset-%s" % (s["output"], p["name"])
-        if not ctx.path(binary).exists:
-            fail(("the tflint ruleset archive %s holds no 'tflint-ruleset-%s', which is " +
+        binary = _BINARY_TEMPLATE.format(name = p["name"])
+        if not ctx.path("%s/%s" % (s["output"], binary)).exists:
+            fail(("the tflint ruleset archive %s holds no '%s', which is " +
                   "the name tflint loads plugin \"%s\" by. It holds: %s") % (
                 p["download_url"],
-                p["name"],
+                binary,
                 p["name"],
                 ", ".join([f.basename for f in ctx.path(s["output"]).readdir()]),
             ))
