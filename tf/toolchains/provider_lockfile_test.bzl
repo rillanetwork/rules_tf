@@ -1,11 +1,4 @@
-"""Unit tests for the generated `.terraform.lock.hcl`.
-
-The document these render is what a module's `init` is handed, and the two ways
-it can go wrong -- naming a version a module's constraints exclude, or naming
-one address twice -- both fail `init` outright rather than degrading. So the
-selection is asserted here rather than only end to end in the integration
-workspaces.
-"""
+"""Unit tests for provider_lockfile.bzl's parsing, version selection, and rendering."""
 
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
 load(
@@ -115,11 +108,7 @@ _select_versions_test = unittest.make(_select_versions_test_impl)
 _render_document_test = unittest.make(_render_document_test_impl)
 
 def provider_lockfile_test_suite(name = "provider_lockfile_test"):
-    """Declares the lock file generation tests.
-
-    Args:
-      name: the suite's name.
-    """
+    """Test suite covering parse_mirror_hashes, declared_constraints, select_lock_versions and module_lock_document."""
     unittest.suite(
         name,
         _parse_and_constraints_test,

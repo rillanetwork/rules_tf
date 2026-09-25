@@ -58,20 +58,13 @@ def package_fact_key(host, namespace, provider_type, version, platform):
     )
 
 def dirhash_fact_key(host, namespace, provider_type, version):
-    """Fact key under which a version's `h1:` directory hashes are remembered.
-
-    The value carries `hashes`, a comma-joined list of `h1:` values with the
-    scheme prefix stripped (they are base64, so they never contain a comma).
-    These are separate from the `package/` entries because they carry no
-    platform label: `terraform providers lock` emits them as one unlabelled
-    list per provider version, and terraform matches an installed directory
-    against the set rather than against one member of it.
+    """Fact key under which a version's h1 dirhash is remembered.
 
     Args:
       host: registry hostname the provider resolves against.
       namespace: the provider's namespace.
       provider_type: the provider's type.
-      version: the concrete version the hashes cover.
+      version: the concrete version the dirhash covers.
 
     Returns:
       The fact key.
