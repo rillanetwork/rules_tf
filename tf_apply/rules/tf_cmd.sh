@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
-# Generic terraform runner. Forwards all arguments to `terraform -chdir=$TF_DIR`,
+# Generic terraform runner. Forwards all arguments to `terraform -chdir=$work_dir`,
 # with best-effort symlinking of .terraform, .terraform.lock.hcl, and plan.tfplan
-# from the root module's bazel-tf output directory back into the module source directory.
+# from the root module's bazel-tf output directory into the working directory.
 #
 # Usage: bazel run //path:my_module.tf -- <subcommand> [flags...]
 # Examples:
@@ -13,8 +13,9 @@
 
 set -euo pipefail
 
-TF_BIN_PATH="${PWD}/%TF_BIN_PATH%"
-TF_DIR="%TF_DIR%"
+tf_bin="${PWD}/%tf_bin%"
+# The module's package inside this target's runfiles tree, which is unique to the root and command.
+work_dir="${PWD}/%module_dir%"
 
 if [ -z "${BUILD_WORKSPACE_DIRECTORY:-}" ]; then
     echo "BUILD_WORKSPACE_DIRECTORY is not set. Please set it before running this script."
@@ -30,23 +31,23 @@ if [ $# -eq 0 ]; then
     exit 2
 fi
 
-OUT_DIR="$BUILD_WORKSPACE_DIRECTORY/bazel-tf/%TF_STATE_DIR%"
+state_dir="$BUILD_WORKSPACE_DIRECTORY/bazel-tf/%state_dir%"
 
-# Best-effort symlink the inited state back into the module dir. We don't
+# Best-effort symlink the inited state into the working directory. We don't
 # require these to exist — pre-init commands like `fmt` and `validate` work
 # without them, and terraform itself emits a clear error for commands that
 # need init.
-if [ -d "$OUT_DIR/.terraform" ]; then
-    test -e "$TF_DIR/.terraform" && rm -rf "$TF_DIR/.terraform"
-    ln -sfn "$OUT_DIR/.terraform" "$TF_DIR/.terraform"
+if [ -d "$state_dir/.terraform" ]; then
+    test -e "$work_dir/.terraform" && rm -rf "$work_dir/.terraform"
+    ln -sfn "$state_dir/.terraform" "$work_dir/.terraform"
 fi
-if [ -f "$OUT_DIR/.terraform.lock.hcl" ]; then
-    test -e "$TF_DIR/.terraform.lock.hcl" && rm -rf "$TF_DIR/.terraform.lock.hcl"
-    ln -sfn "$OUT_DIR/.terraform.lock.hcl" "$TF_DIR/.terraform.lock.hcl"
+if [ -f "$state_dir/.terraform.lock.hcl" ]; then
+    test -e "$work_dir/.terraform.lock.hcl" && rm -rf "$work_dir/.terraform.lock.hcl"
+    ln -sfn "$state_dir/.terraform.lock.hcl" "$work_dir/.terraform.lock.hcl"
 fi
-if [ -f "$OUT_DIR/plan.tfplan" ]; then
-    test -e "$TF_DIR/plan.tfplan" && rm -rf "$TF_DIR/plan.tfplan"
-    ln -sfn "$OUT_DIR/plan.tfplan" "$TF_DIR/plan.tfplan"
+if [ -f "$state_dir/plan.tfplan" ]; then
+    test -e "$work_dir/plan.tfplan" && rm -rf "$work_dir/plan.tfplan"
+    ln -sfn "$state_dir/plan.tfplan" "$work_dir/plan.tfplan"
 fi
 
-exec "$TF_BIN_PATH" -chdir="$TF_DIR" "$@"
+exec "$tf_bin" -chdir="$work_dir" "$@"

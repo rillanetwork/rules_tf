@@ -197,10 +197,10 @@ def tf_init_impl(ctx):
         output = init_script,
         template = ctx.file._script_template,
         substitutions = {
-            "%TF_BIN_PATH%": tf_toolchain.runtime.tf.short_path,
-            "%TF_DIR%": ctx.attr.module.label.package,
-            "%TF_STATE_DIR%": _state_dir(ctx),
-            "%TF_PLUGINS_DIR%": tf_toolchain.runtime.mirror_path,
+            "%tf_bin%": tf_toolchain.runtime.tf.short_path,
+            "%module_dir%": ctx.attr.module.label.package,
+            "%state_dir%": _state_dir(ctx),
+            "%plugins_dir%": tf_toolchain.runtime.mirror_path,
         },
     )
 
@@ -268,10 +268,10 @@ def tf_plan_impl(ctx):
         output = plan_script,
         template = ctx.file._script_template,
         substitutions = {
-            "%TF_BIN_PATH%": tf_toolchain.runtime.tf.short_path,
-            "%TF_DIR%": ctx.attr.module.label.package,
-            "%TF_STATE_DIR%": _state_dir(ctx),
-            "%TF_OUTPUT_JSON%": "1" if ctx.attr.output_json else "0",
+            "%tf_bin%": tf_toolchain.runtime.tf.short_path,
+            "%module_dir%": ctx.attr.module.label.package,
+            "%state_dir%": _state_dir(ctx),
+            "%output_json%": "1" if ctx.attr.output_json else "0",
         },
     )
 
@@ -347,9 +347,9 @@ def tf_destroy_impl(ctx):
         output = destroy_script,
         template = ctx.file._script_template,
         substitutions = {
-            "%TF_BIN_PATH%": tf_toolchain.runtime.tf.short_path,
-            "%TF_DIR%": ctx.attr.module.label.package,
-            "%TF_STATE_DIR%": _state_dir(ctx),
+            "%tf_bin%": tf_toolchain.runtime.tf.short_path,
+            "%module_dir%": ctx.attr.module.label.package,
+            "%state_dir%": _state_dir(ctx),
         },
     )
 
@@ -415,9 +415,9 @@ def tf_apply_impl(ctx):
         output = apply_script,
         template = ctx.file._script_template,
         substitutions = {
-            "%TF_BIN_PATH%": tf_toolchain.runtime.tf.short_path,
-            "%TF_DIR%": ctx.attr.module.label.package,
-            "%TF_STATE_DIR%": _state_dir(ctx),
+            "%tf_bin%": tf_toolchain.runtime.tf.short_path,
+            "%module_dir%": ctx.attr.module.label.package,
+            "%state_dir%": _state_dir(ctx),
         },
     )
 
@@ -469,7 +469,7 @@ tf_apply = rule(
 def tf_cmd_impl(ctx):
     """Builds a generic terraform runner script forwarding every argument to terraform.
 
-    Arguments go to `terraform -chdir=$TF_DIR`. Intended for subcommands that
+    Arguments go to `terraform -chdir=$work_dir`. Intended for subcommands that
     have no dedicated rule (destroy, state, import, taint, output, refresh,
     show, ...).
 
@@ -491,9 +491,9 @@ def tf_cmd_impl(ctx):
         output = cmd_script,
         template = ctx.file._script_template,
         substitutions = {
-            "%TF_BIN_PATH%": tf_toolchain.runtime.tf.short_path,
-            "%TF_DIR%": ctx.attr.module.label.package,
-            "%TF_STATE_DIR%": _state_dir(ctx),
+            "%tf_bin%": tf_toolchain.runtime.tf.short_path,
+            "%module_dir%": ctx.attr.module.label.package,
+            "%state_dir%": _state_dir(ctx),
         },
     )
 
