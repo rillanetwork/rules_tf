@@ -3,6 +3,7 @@ Starlark rules for initializing, planning, and applying Terraform modules using 
 """
 
 load("//tf/rules:providers.bzl", "TfModuleInfo")
+load("//tf/rules:tf-module.bzl", "declare_module_lock")
 
 def relative_path(path, other_path):
     """
@@ -174,6 +175,9 @@ def tf_init_impl(ctx):
     """
 
     tf_toolchain = ctx.toolchains["//:tf_toolchain_type"]
+    module = ctx.attr.module[TfModuleInfo]
+
+    lock = declare_module_lock(ctx, module, tf_toolchain.runtime)
 
     init_script = ctx.actions.declare_file(ctx.label.name)
 
@@ -184,6 +188,7 @@ def tf_init_impl(ctx):
             "%TF_BIN_PATH%": tf_toolchain.runtime.tf.short_path,
             "%TF_DIR%": ctx.attr.module.label.package,
             "%TF_PLUGINS_DIR%": tf_toolchain.runtime.mirror_path,
+            "%TF_LOCK_FILE%": lock.short_path if lock else "",
         },
     )
 
@@ -193,7 +198,9 @@ def tf_init_impl(ctx):
     # find file ending with tfvars
     tfvars_file = [file for file in tfvars_deps if file.short_path.endswith(".tfvars.json.generated")][0]
 
-    deps = ctx.attr.module[TfModuleInfo].transitive_srcs.to_list() + tf_toolchain.runtime.deps + tfvars_deps + backend_deps
+    deps = module.transitive_srcs.to_list() + tf_toolchain.runtime.deps + tfvars_deps + backend_deps
+    if lock:
+        deps.append(lock)
 
     return [DefaultInfo(
         executable = init_script,

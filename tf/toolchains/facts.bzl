@@ -57,6 +57,25 @@ def package_fact_key(host, namespace, provider_type, version, platform):
         platform = platform,
     )
 
+def dirhash_fact_key(host, namespace, provider_type, version):
+    """Fact key under which a version's h1 dirhash is remembered.
+
+    Args:
+      host: registry hostname the provider resolves against.
+      namespace: the provider's namespace.
+      provider_type: the provider's type.
+      version: the concrete version the dirhash covers.
+
+    Returns:
+      The fact key.
+    """
+    return "h1/{host}/{ns}/{type}/{version}".format(
+        host = host,
+        ns = namespace,
+        type = provider_type,
+        version = version,
+    )
+
 def tool_fact_key(tool, version, platform):
     """Fact key under which one platform's tool release sha256 is remembered.
 
@@ -74,11 +93,6 @@ def tool_fact_key(tool, version, platform):
         platform = platform,
     )
 
-# The platforms a tf toolchain can run on, and so the set whose package
-# coordinates every resolution records -- one lockfile then serves every machine
-# in a team, whichever wrote it. Enumerated rather than discovered because
-# `module_ctx.facts` is a lookup with no iteration, so a platform's coordinates
-# can only be asked for by name.
 MIRROR_PLATFORMS = [
     "linux_amd64",
     "linux_arm64",

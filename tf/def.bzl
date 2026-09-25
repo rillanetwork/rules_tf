@@ -106,6 +106,7 @@ def tf_module(
         name = "module",
         deps = deps,
         srcs = ":srcs",
+        providers_json = json.encode(normalised),
         tags = tags,
     )
 

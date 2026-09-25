@@ -8,7 +8,7 @@ The helpers here read those hashes out of a lock file, produce them by running
 package's sha256 against them before the mirror is allowed to fetch it.
 """
 
-load(":facts.bzl", "package_fact_key")
+load(":facts.bzl", "dirhash_fact_key", "package_fact_key")
 
 # `providers lock` fetches a package per provider, so the ceiling is a download
 # rather than a computation.
@@ -26,48 +26,41 @@ _VERSIONS_TF_JSON = """{
 }
 """
 
-def _zh_hashes_in_line(text):
-    """Every `zh:` hash quoted on one line, with the prefix stripped."""
+def _hashes_in_line(text, scheme):
+    prefix = scheme + ":"
     found = []
     parts = text.split("\"")
 
     # Quoted values are the odd-numbered fields of a split on the quote.
     for i in range(1, len(parts), 2):
-        if parts[i].startswith("zh:"):
-            found.append(parts[i][len("zh:"):])
+        if parts[i].startswith(prefix):
+            found.append(parts[i][len(prefix):])
 
     return found
 
 def parse_provider_locks(documents):
-    """Merges `.terraform.lock.hcl` documents into {source@version: {zh hash: True}}.
+    """Merges `.terraform.lock.hcl` documents into `zh:` and `h1:` hash tables.
 
-    A terraform dependency lock file records, per provider, the sha256 of the
-    release package for every platform, as `zh:` entries. Those hashes are
-    produced by `terraform providers lock`, which verifies the registry's
-    SHA256SUMS against the signing keys embedded in the terraform binary -- so
-    a `zh:` value is a hash that survived a signature check, and is a trust
-    root independent of whatever the registry later claims.
-
-    A lock file holds one version per provider, while a mirror may stock
-    several, so several documents merge into one table keyed by source and
-    version. `h1:` hashes are ignored: they cover the extracted directory, not
-    the package, and only for the platforms the lock was generated for.
-
-    The grammar used here is the narrow subset terraform itself emits, not
-    general HCL.
+    `zh:` hashes are release-zip sha256s that `providers lock` checked against
+    the publisher's signature, so they are what mirrored packages are verified
+    against. `h1:` hashes cover the extracted directory instead: they are kept
+    in their own table, never used for verification, and only carried out for
+    the generated lock file. Only the narrow HCL subset terraform emits is parsed.
 
     Args:
       documents: contents of one or more `.terraform.lock.hcl` files.
 
     Returns:
-      {"<host>/<ns>/<type>@<version>": {"<zh hash>": True}}, merged across
-      every document given.
+      A (zh, h1) tuple, each {"<host>/<ns>/<type>@<version>": {"<hash>": True}}
+      with the scheme prefix stripped, merged across every document given.
     """
     locks = {}
+    dirhashes = {}
     for raw in documents:
         address = ""
         version = ""
         hashes = []
+        dirs = []
         in_hashes = False
 
         for line in raw.splitlines():
@@ -79,6 +72,7 @@ def parse_provider_locks(documents):
                 address = text.split("\"")[1]
                 version = ""
                 hashes = []
+                dirs = []
                 in_hashes = False
                 continue
 
@@ -86,14 +80,16 @@ def parse_provider_locks(documents):
                 continue
 
             if in_hashes:
-                hashes += _zh_hashes_in_line(text)
+                hashes += _hashes_in_line(text, "zh")
+                dirs += _hashes_in_line(text, "h1")
                 if "]" in text:
                     in_hashes = False
                 continue
 
             if text.startswith("hashes"):
                 # `hashes = [...]` may be written on one line or span several.
-                hashes += _zh_hashes_in_line(text)
+                hashes += _hashes_in_line(text, "zh")
+                dirs += _hashes_in_line(text, "h1")
                 in_hashes = "]" not in text
             elif text.startswith("version"):
                 parts = text.split("\"")
@@ -106,9 +102,15 @@ def parse_provider_locks(documents):
                     for h in hashes:
                         merged[h] = True
                     locks[key] = merged
+
+                    merged_dirs = dirhashes.get(key, {})
+                    for h in dirs:
+                        merged_dirs[h] = True
+                    if merged_dirs:
+                        dirhashes[key] = merged_dirs
                 address = ""
 
-    return locks
+    return locks, dirhashes
 
 def merge_provider_locks(a, b):
     """Unions two `parse_provider_locks`-shaped tables.
@@ -191,33 +193,29 @@ def fetch_lock_tool(ctx, tool, version, os, arch, url_template, sha256):
 
     return ctx.path("lock/tool/" + tool)
 
-def lock_providers(ctx, tool, packages):
+def lock_providers(ctx, tool, packages, platforms):
     """Runs `<tool> providers lock` over each package and returns the hashes it verified.
-
-    The lock command verifies the registry's SHA256SUMS signature against the
-    signing keys the tf binary carries, then records the sha256 of every
-    platform's release package as a `zh:` entry. A hash it emits is therefore
-    one a publisher signed, which is a trust root independent of whatever the
-    registry claims when the package is later fetched.
-
-    One run per version, each over a single-provider configuration: a
-    `.terraform.lock.hcl` holds one version per provider, and asking for one at
-    a time lets a mirror stock as many versions of a provider as it likes.
 
     Args:
       ctx: the module extension's `module_ctx`.
       tool: path of the terraform or tofu binary to run.
       packages: resolved coordinates to verify.
+      platforms: the platforms to lock for, each as "<os>_<arch>".
 
     Returns:
-      Verified hashes, shaped as `parse_provider_locks` produces them.
+      A (zh, h1) tuple, shaped as `parse_provider_locks` produces them.
     """
     locks = {}
+    dirhashes = {}
     for index, p in enumerate(packages):
         address = "%s/%s/%s" % (p["host"], p["namespace"], p["type"])
         workdir = "lock/%d" % index
 
-        ctx.report_progress("Verifying %s %s" % (address, p["version"]))
+        ctx.report_progress("Verifying %s %s (%d platforms)" % (
+            address,
+            p["version"],
+            len(platforms),
+        ))
         ctx.file(
             workdir + "/versions.tf.json",
             _VERSIONS_TF_JSON % (address, p["version"]),
@@ -228,7 +226,8 @@ def lock_providers(ctx, tool, packages):
         # tool the way they reach it anywhere else: a CLI configuration file, or
         # the TF_TOKEN_<host> variables.
         result = ctx.execute(
-            [tool, "-chdir=%s" % ctx.path(workdir), "providers", "lock"],
+            [tool, "-chdir=%s" % ctx.path(workdir), "providers", "lock"] +
+            ["-platform=%s" % platform for platform in platforms],
             timeout = _LOCK_TIMEOUT,
         )
         if result.return_code != 0:
@@ -246,9 +245,44 @@ def lock_providers(ctx, tool, packages):
         if not document.exists:
             fail("`providers lock` wrote no .terraform.lock.hcl for %s %s" % (address, p["version"]))
 
-        locks = merge_provider_locks(locks, parse_provider_locks([ctx.read(document)]))
+        run_locks, run_dirhashes = parse_provider_locks([ctx.read(document)])
+        locks = merge_provider_locks(locks, run_locks)
+        dirhashes = merge_provider_locks(dirhashes, run_dirhashes)
 
-    return locks
+    return locks, dirhashes
+
+def collect_provider_dirhashes(previous, packages, discovered):
+    """Combines freshly discovered dirhashes with any previously recorded ones.
+
+    Args:
+      previous: the prior evaluation's fact table.
+      packages: resolved coordinates to collect dirhashes for.
+      discovered: dirhashes from this run, as `parse_provider_locks` returns them.
+
+    Returns:
+      {"<host>/<ns>/<type>@<version>": ["<h1 hash>", ...]}, one sorted list per
+      package merging previously recorded hashes with newly discovered ones.
+    """
+    collected = {}
+    for p in packages:
+        key = "%s/%s/%s@%s" % (p["host"], p["namespace"], p["type"], p["version"])
+        hashes = dict(discovered.get(key, {}))
+
+        remembered = previous.get(dirhash_fact_key(
+            p["host"],
+            p["namespace"],
+            p["type"],
+            p["version"],
+        ))
+        if remembered:
+            for h in remembered["hashes"].split(","):
+                if h:
+                    hashes[h] = True
+
+        if hashes:
+            collected[key] = sorted(hashes)
+
+    return collected
 
 def verify_provider_hashes(facts, packages, platforms, locks):
     """Checks every recorded package hash against the verified set, and marks it.
