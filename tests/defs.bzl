@@ -27,6 +27,9 @@ def tf_integration_test(name, workspace_path, test_runner, bazel_cmds = None):
     """
     bazel_integration_test(
         name = name,
+        # `tflint --init` looks rulesets up through the GitHub API, which
+        # rate-limits anonymous callers per IP; shared CI runners hit that.
+        additional_env_inherit = ["GITHUB_TOKEN"],
         bazel_binaries = bazel_binaries,
         bazel_version = bazel_binaries.versions.current,
         env = {"TF_BAZEL_CMDS": "\n".join(bazel_cmds)} if bazel_cmds else {},
