@@ -114,6 +114,11 @@ that verified against the signing keys compiled into the terraform binary; the r
 `MODULE.bazel.lock`, so later builds read a pin a publisher signed. `provider_locks` accepts a
 `.terraform.lock.hcl` instead. See [docs/mirror.md](docs/mirror.md#verified-hashes).
 
+### Linting
+
+Every `tf_module` declares a `lint` test that runs tflint over the module's sources. Its config and its ruleset
+plugins come from the toolchain, so linting needs no network at build time. See [docs/tflint.md](docs/tflint.md).
+
 ### Custom and private registries
 
 Mirror entries may name a registry host other than the default (`registry.terraform.io`, or
@@ -237,6 +242,9 @@ tf_module(
     tflint_config = ":tflint-custom-config",
 )
 ```
+
+A module-level config replaces the toolchain's rather than merging with it. See [docs/tflint.md](docs/tflint.md) for
+the config, `tflint_extra_args`, and ruleset plugins.
 
 1. Generating versions.tf.json files
 

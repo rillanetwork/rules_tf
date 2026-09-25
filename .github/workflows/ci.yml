@@ -42,6 +42,11 @@ jobs:
 
     runs-on: ${{ matrix.runner }}
 
+    # Reaches `tflint --init` in the nested Bazel, which is otherwise
+    # rate-limited by the GitHub API per runner IP.
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+
     steps:
       - uses: actions/checkout@v6
 
