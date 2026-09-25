@@ -148,22 +148,15 @@ tf_module_deps = rule(
 )
 
 def declare_module_lock(ctx, module, tf_runtime):
-    """Writes the `.terraform.lock.hcl` covering what the mirror holds for a module.
-
-    `init` against an unpacked mirror has no lock file to read, so it hashes
-    what it finds and warns that the result covers only the platform it ran on.
-    The hashes are already known here -- the module extension resolved one per
-    platform, and every mirrored package was fetched against it -- so the file
-    is written from those instead.
+    """Declares a generated .terraform.lock.hcl for the module, if it needs one.
 
     Args:
-      ctx: the rule context, which the file is declared against.
-      module: the module's TfModuleInfo.
-      tf_runtime: the tf toolchain's TfInfo.
+        ctx: the rule context to declare the file under.
+        module: the TfModuleInfo whose transitive providers the lock covers.
+        tf_runtime: toolchain runtime, providing mirror hashes and the default registry.
 
     Returns:
-      The lock file, or None when the mirror can name no provider for this
-      module and `init` should be left to its own devices.
+        The declared lock File, or None if the module has no providers to lock.
     """
     document = module_lock_document(
         tf_runtime.mirror_hashes,
@@ -178,19 +171,14 @@ def declare_module_lock(ctx, module, tf_runtime):
     return lock
 
 def install_module_lock(lock, module_dir):
-    """The shell prefix placing a generated lock file in the module's rundir.
-
-    Copied rather than symlinked: `init` rewrites the lock in place whenever the
-    document is incomplete -- appending the `h1:` dirhash it computes for the
-    running platform, which is absent when nothing signature-verified the mirror
-    -- and through a runfiles symlink that would land on the build output.
+    """Builds the shell snippet that installs a generated lock file into a module dir.
 
     Args:
-      lock: the generated lock file, or None.
-      module_dir: the module's path, relative to the runfiles root.
+        lock: the declared lock File, or None if there is nothing to install.
+        module_dir: path of the module directory to copy the lock file into.
 
     Returns:
-      A shell fragment ending in `;`, or "" when there is no lock to install.
+        A shell command string, or "" if lock is None.
     """
     if not lock:
         return ""

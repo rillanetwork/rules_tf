@@ -6,12 +6,6 @@ independent of whatever a registry later claims when the package is fetched.
 The helpers here read those hashes out of a lock file, produce them by running
 `providers lock` when no lock file covers an entry, and match a resolved
 package's sha256 against them before the mirror is allowed to fetch it.
-
-The same documents carry `h1:` hashes, which cover the extracted directory a
-mirror hands terraform rather than the release zip. They verify nothing here --
-only terraform can compute one, over a tree it already has -- but they are what
-makes a generated `.terraform.lock.hcl` complete, so they are read alongside
-and carried out for the renderer.
 """
 
 load(":facts.bzl", "dirhash_fact_key", "package_fact_key")
@@ -33,7 +27,6 @@ _VERSIONS_TF_JSON = """{
 """
 
 def _hashes_in_line(text, scheme):
-    """Every hash of one scheme quoted on one line, with the prefix stripped."""
     prefix = scheme + ":"
     found = []
     parts = text.split("\"")
@@ -46,37 +39,20 @@ def _hashes_in_line(text, scheme):
     return found
 
 def parse_provider_locks(documents):
-    """Merges `.terraform.lock.hcl` documents into a `zh:` and an `h1:` table.
+    """Merges `.terraform.lock.hcl` documents into `zh:` and `h1:` hash tables.
 
-    A terraform dependency lock file records, per provider, the sha256 of the
-    release package for every platform, as `zh:` entries. Those hashes are
-    produced by `terraform providers lock`, which verifies the registry's
-    SHA256SUMS against the signing keys embedded in the terraform binary -- so
-    a `zh:` value is a hash that survived a signature check, and is a trust
-    root independent of whatever the registry later claims.
-
-    A lock file holds one version per provider, while a mirror may stock
-    several, so several documents merge into one table keyed by source and
-    version.
-
-    `h1:` hashes come back in a table of their own, never mixed into the `zh:`
-    one: they are a dirhash over the extracted package, so a mirrored package's
-    sha256 must never be admitted by matching one, and only the `zh:` table is
-    what `verify_provider_hashes` checks against. They matter to the generated
-    lock document instead, which terraform reads against an extracted
-    directory, and they carry no platform label -- a document lists them flat,
-    however many platforms it was generated for.
-
-    The grammar used here is the narrow subset terraform itself emits, not
-    general HCL.
+    `zh:` hashes are release-zip sha256s that `providers lock` checked against
+    the publisher's signature, so they are what mirrored packages are verified
+    against. `h1:` hashes cover the extracted directory instead: they are kept
+    in their own table, never used for verification, and only carried out for
+    the generated lock file. Only the narrow HCL subset terraform emits is parsed.
 
     Args:
       documents: contents of one or more `.terraform.lock.hcl` files.
 
     Returns:
-      A (zh, h1) tuple, each shaped
-      {"<host>/<ns>/<type>@<version>": {"<hash>": True}} with the scheme prefix
-      stripped, merged across every document given.
+      A (zh, h1) tuple, each {"<host>/<ns>/<type>@<version>": {"<hash>": True}}
+      with the scheme prefix stripped, merged across every document given.
     """
     locks = {}
     dirhashes = {}
@@ -220,25 +196,6 @@ def fetch_lock_tool(ctx, tool, version, os, arch, url_template, sha256):
 def lock_providers(ctx, tool, packages, platforms):
     """Runs `<tool> providers lock` over each package and returns the hashes it verified.
 
-    The lock command verifies the registry's SHA256SUMS signature against the
-    signing keys the tf binary carries, then records the sha256 of every
-    platform's release package as a `zh:` entry. A hash it emits is therefore
-    one a publisher signed, which is a trust root independent of whatever the
-    registry claims when the package is later fetched.
-
-    One run per version, each over a single-provider configuration: a
-    `.terraform.lock.hcl` holds one version per provider, and asking for one at
-    a time lets a mirror stock as many versions of a provider as it likes.
-
-    Every platform is named with a `-platform=` flag, which is what makes the
-    run emit an `h1:` dirhash per platform rather than only for the machine it
-    ran on. That costs a package download each -- the `zh:` values come from the
-    signed SHA256SUMS, but a dirhash can only be computed over an unpacked
-    package -- and it is what lets one generated lock document serve every
-    machine in a team. The flag also narrows what is recorded to the platforms
-    named, so `platforms` must cover every one whose coordinates were resolved,
-    or `verify_provider_hashes` would find a package no `zh:` entry covers.
-
     Args:
       ctx: the module extension's `module_ctx`.
       tool: path of the terraform or tofu binary to run.
@@ -295,29 +252,16 @@ def lock_providers(ctx, tool, packages, platforms):
     return locks, dirhashes
 
 def collect_provider_dirhashes(previous, packages, discovered):
-    """The `h1:` hashes each package is known by, remembered ones included.
-
-    A package's dirhashes only ever grow: what an evaluation discovers is
-    unioned onto what a previous one recorded, because a lock document that
-    dropped a platform's hash would send `init` back to appending its own. The
-    remembered ones have to be read here rather than carried forward wholesale,
-    since `module_ctx.facts` is a lookup with no iteration -- a key nobody asks
-    for is a key the returned table loses.
-
-    A package with no dirhashes from either source is simply absent: a mirror
-    built under `provider_verification = "off"` never runs the tool, and a
-    supplied lock file usually covers one platform, so incompleteness is the
-    ordinary case rather than an error.
+    """Combines freshly discovered dirhashes with any previously recorded ones.
 
     Args:
-      previous: the persisted fact table, `module_ctx.facts`.
-      packages: resolved coordinates, one per provider version.
-      discovered: `h1:` hashes found this evaluation, as
-        `parse_provider_locks` returns them.
+      previous: the prior evaluation's fact table.
+      packages: resolved coordinates to collect dirhashes for.
+      discovered: dirhashes from this run, as `parse_provider_locks` returns them.
 
     Returns:
-      {"<host>/<ns>/<type>@<version>": ["<h1 hash>", ...]}, covering only the
-      packages something knows a hash for.
+      {"<host>/<ns>/<type>@<version>": ["<h1 hash>", ...]}, one sorted list per
+      package merging previously recorded hashes with newly discovered ones.
     """
     collected = {}
     for p in packages:

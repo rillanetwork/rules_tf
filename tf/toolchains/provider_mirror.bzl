@@ -208,23 +208,15 @@ def _resolve_constraints(ctx, client, targets):
 def resolve_providers(ctx, entries, default_host, os, arch, facts):
     """Resolves every mirror entry to a concrete version, package URL and sha256.
 
-    This runs in the module extension rather than in the download repo so that
-    what it learns from the registry is returned as extension facts, which
-    bzlmod persists in `MODULE.bazel.lock` -- a second evaluation then resolves
-    from the lockfile and reaches the registry not at all.
+    A registry failure is recorded in the returned errors rather than raised:
+    extension evaluation is not lazy, so failing here would break every build
+    in the workspace, including ones that touch no terraform at all. The
+    caller passes the errors to the download repository, which fails on them
+    only when a target actually needs the mirror.
 
-    `facts` is the previously persisted table (`module_ctx.facts`). A hit on a
-    `resolve/` key skips the version listing; a hit on a `package/` key skips
-    the metadata request. A miss is not an error: that entry resolves live, and
-    its result joins the facts returned to the caller.
-
-    Work is batched rather than run per provider: every version listing is put
-    in flight before any is awaited, then every metadata request likewise, so a
-    manifest of N providers costs two rounds of latency instead of 2N.
-
-    Coordinates are resolved for every platform in `MIRROR_PLATFORMS`, so one
-    build writes a lockfile covering them all. Only the host's package is
-    downloaded; a platform a provider does not publish is skipped, not fatal.
+    Every platform in `MIRROR_PLATFORMS` is resolved, not just the host's, so
+    one build writes a lockfile that covers them all; a platform a provider
+    does not publish is skipped rather than fatal.
 
     Args:
       ctx: the module extension's `module_ctx`.
@@ -232,16 +224,16 @@ def resolve_providers(ctx, entries, default_host, os, arch, facts):
       default_host: registry an unqualified source resolves against.
       os: host operating system, in terraform's spelling ("linux", "darwin").
       arch: host architecture, in terraform's spelling ("amd64", "arm64").
-      facts: the previously persisted fact table, `module_ctx.facts`.
+      facts: the previously persisted fact table, `module_ctx.facts`. A hit
+        skips the matching registry request; a miss resolves live and joins
+        the facts returned to the caller.
 
     Returns:
       A (packages, facts, errors) tuple: packages carries the concrete
-      coordinates for this platform, facts is the table to hand back to bzlmod,
-      and errors names every entry that could not be resolved.
-
-      A registry failure is reported rather than fatal. Extension evaluation is
-      not lazy, so failing here would break every build in the workspace,
-      including ones that touch no terraform at all.
+      coordinates for this platform, including a `hashes` list of `zh:`
+      sha256 sums covering every platform resolved; facts is the table to
+      hand back to bzlmod; and errors names every entry that could not be
+      resolved.
     """
     client = new_registry_client(ctx)
 
@@ -424,15 +416,13 @@ def resolve_providers(ctx, entries, default_host, os, arch, facts):
 def download_providers(ctx, packages, os, arch):
     """Unpacks every resolved package into the filesystem-mirror layout.
 
-    Every coordinate arrives already resolved, so this reaches no registry: it
-    fetches known URLs against known hashes. That makes each package
-    content-addressed for `--repository_cache`, so a warm cache serves the whole
-    mirror offline.
+    Downloads are sha256-pinned against the resolved coordinates, so they are
+    content-addressed for `--repository_cache` and a warm cache serves the
+    whole mirror offline.
 
-    The extract target reproduces the "unpacked" filesystem-mirror layout that
-    downstream `terraform init -plugin-dir=<mirror>` consumes, letting init
-    symlink the plugin into each module's .terraform/providers/ rather than
-    extracting a fresh copy per target.
+    The output layout matches what `terraform init -plugin-dir=<mirror>`
+    expects to find, so init can symlink each provider into a module's
+    .terraform/providers/ directly.
 
     Args:
       ctx: the download repository's `repository_ctx`.

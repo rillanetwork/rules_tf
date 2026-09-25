@@ -179,12 +179,6 @@ once per version, needs network access and the registry credentials described in
 [registries.md](registries.md), and is then answered from `MODULE.bazel.lock` until the manifest changes. Under a
 tofu toolchain it runs `tofu providers lock` against `registry.opentofu.org`.
 
-The run passes a `-platform=` flag for every platform, which is also where the `h1:` dirhashes that complete a
-[generated lock file](#the-generated-terraformlockhcl) come from: `zh:` values come from the signed `SHA256SUMS`,
-but a dirhash has to be computed over an unpacked package, so each named platform costs one package download.
-Dirhashes are remembered under their own `h1/<host>/<ns>/<type>/<version>` fact, keyed by version rather than
-platform, because a lock file lists them flat with no platform label.
-
 Two consequences follow from where the result is kept:
 
 - **Editing a recorded hash does not re-trigger the check**: facts are not an input Bazel invalidates the
@@ -258,58 +252,13 @@ Modules then select whichever version they require through their own `required_p
 
 When nothing is mirrored, `init` is run without `-plugin-dir` and resolves providers against the registry.
 
-## The generated `.terraform.lock.hcl`
+## The generated lock file
 
-A module initialised against an unpacked mirror has no lock file to read, so terraform hashes the packages it
-finds, writes down what it computed, and warns that the result only covers the platform it ran on:
+### Providers required by a downloaded module
 
-```
-Warning: Incomplete lock file information for providers
-...
-The current .terraform.lock.hcl file only includes checksums for linux_amd64
-```
-
-Those hashes are already known: the extension resolved a package sha256 for every platform, checked each against
-the signature-derived hashes, and Bazel fetched the host's package against its own. So each module's rundir is
-given a `.terraform.lock.hcl` written from them, and the warning goes with it.
-
-Each block carries both hash schemes, because terraform uses them in different places. A `zh:` value is the
-sha256 of a release zip - what the extension verified and what Bazel fetched against - but a mirror hands
-terraform an extracted directory, so terraform takes the `zh:` entries on trust and checks the `h1:` dirhashes
-instead. Both come from the same [`providers lock` run](#how-it-runs). Given both, `init` leaves the file alone;
-given only `zh:`, it appends the running platform's dirhash and reports that it "has made some changes to the
-provider dependency selections recorded in the .terraform.lock.hcl file". That is also why the file is copied
-into the rundir rather than symlinked: under `provider_verification = "off"` there are no dirhashes to write, so
-`init` rewrites what it was given.
-
-`hashes` is a set terraform matches the installed package against, so every platform's hash goes into every
-block. That is what lets one lock file serve every machine.
-
-### Choosing the version
-
-`version` is the one field that is not set-shaped: a lock file holds one version per provider address. Two blocks
-for one address is a `Duplicate provider lock` error, and a version the module's constraints exclude fails `init`
-outright, so a source the mirror stocks at several versions has to be chosen between.
-
-The choice comes from the `providers` a module and its dependencies declare - the same declarations
-`versions.tf.json` is generated from - ANDed together the way terraform ANDs them across a configuration. A
-source stocked once needs no constraint and is always named. A source stocked several times whose declared
-constraints select none of them is left out entirely, so terraform reports the conflict against the whole
-configuration rather than against a version picked here.
-
-Providers a module does not declare are left out too. A mirror is shared across a workspace, so it stocks
-providers a given module has nothing to do with, and `init` rewrites the file to prune any block the
-configuration does not require. Avoiding that rewrite is the point of generating the file, so being stocked is
-not enough to be named.
-
-### Providers a downloaded module requires
-
-Only the declarations Bazel can see are rendered: a module's own `providers`, plus those of everything it reaches
-through `deps`. A module sourced from a registry is outside that set, because `init` is what downloads it and the
-lock file is written before `init` runs.
-
-If such a module requires a provider nothing else names, `init` resolves it and appends an entry - the same kind
-of change as a pruned block, and reported the same way:
+A module sourced from the registry or a remote URL is not a `deps` label, so rules_tf never reads its
+`required_providers` block - that source is not fetched until terraform's own `init` runs. Its providers are invisible
+to the generated lock unless declared some other way.
 
 ```
 - Reusing previous version of hashicorp/aws from the dependency lock file
@@ -317,8 +266,8 @@ of change as a pruned block, and reported the same way:
 - Installing hashicorp/random v3.3.2...
 ```
 
-Declare the address in the root module's `providers`, which is what both `versions.tf.json` and the lock file are
-generated from:
+`hashicorp/aws` was in the generated lock and is reused unchanged; `hashicorp/random` was not, so terraform goes and
+resolves it itself - the failure mode the declaration below avoids when the registry is unreachable.
 
 ```python
 tf_module(
@@ -330,7 +279,3 @@ tf_module(
     },
 )
 ```
-
-The declaration is a real requirement, not a hint to the renderer. A downloaded module's providers are otherwise
-resolved fresh on every `init`, free to float to whatever the registry offers, and the root module is the only
-place they can be pinned. If the report comes back, the upstream module's requirements have moved.

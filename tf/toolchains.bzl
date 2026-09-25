@@ -83,14 +83,7 @@ def _render_mirror_versions(joined):
     return "[" + ", ".join(['"%s"' % v for v in joined.split(",")]) + "]"
 
 def _render_mirror_hashes(encoded):
-    """Renders a repo's hash table as the dict literal the BUILD chunk carries.
-
-    Args:
-      encoded: the table as JSON, keyed "<host>/<ns>/<type>@<version>".
-
-    Returns:
-      A Starlark dict literal, sorted so the generated BUILD file is stable.
-    """
+    """Renders a JSON-encoded hash map as a Starlark dict literal."""
     if encoded == "":
         return "{}"
 

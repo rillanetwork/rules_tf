@@ -1,31 +1,4 @@
-"""Rendering a module's `.terraform.lock.hcl` from the mirror's resolved coordinates.
-
-A module initialised against an unpacked mirror (`init -plugin-dir=...`) has no
-lock file to read, so terraform hashes the packages it finds, writes what it
-computed, and warns that the result covers only the platform it ran on. Every
-one of those hashes is already known here: the module extension resolved a
-signature-checked sha256 for every platform before a byte was fetched, and Bazel
-fetched each package against one. Writing those hashes into the module's rundir
-states what was mirrored, and the warning goes with it.
-
-Two schemes go in, because terraform reads them in different places. A `zh:`
-value is the sha256 of a release zip, which is what the extension verified
-against the publisher's signature and what Bazel fetched against -- but a mirror
-hands terraform an extracted directory, which it can only hash as `h1:`, so the
-`zh:` entries are ones terraform takes as given. The `h1:` values are the ones
-it can actually check, and are why the document is left alone by `init` instead
-of being rewritten with whatever the running platform computed.
-
-Which makes the document a record first and a constraint second: the check that
-matters already ran in the extension, and terraform's own check at `init` is a
-second line covering the tree after Bazel unpacked it.
-
-The one field that is not set-shaped is `version`: a lock file holds one per
-provider address, two blocks for one address is a hard `Duplicate provider lock`
-error, and a version outside a module's constraints fails `init` outright. So
-when the mirror stocks a source at several versions, the module's own declared
-constraint picks between them, exactly as terraform's own selection would.
-"""
+"""Renders a module's .terraform.lock.hcl from the mirror's recorded provider hashes."""
 
 load(":provider_mirror.bzl", "provider_source_parts")
 load(":semver.bzl", "select_matching_version")
@@ -49,15 +22,14 @@ provider "{address}" {{
 """
 
 def parse_mirror_hashes(mirror_hashes):
-    """Regroups the toolchain's flat hash table by provider address.
+    """Groups a provider mirror's hashes by address and version.
 
     Args:
-      mirror_hashes: {"<host>/<ns>/<type>@<version>": "<hash>,<hash>,..."}, as
-        the tf toolchain carries it; each hash scheme-prefixed ("zh:" or "h1:")
-        as a lock document spells it.
+      mirror_hashes: a dict keyed "address@version", each value a
+        comma-joined string of package hashes.
 
     Returns:
-      {"<host>/<ns>/<type>": {"<version>": ["<hash>", ...]}}.
+      A dict of address to {version: [hashes]}.
     """
     by_address = {}
     for key, joined in mirror_hashes.items():
@@ -67,27 +39,17 @@ def parse_mirror_hashes(mirror_hashes):
     return by_address
 
 def declared_constraints(declared, default_registry):
-    """Collects the providers a module tree declares, and the constraints on each.
+    """Collects the version constraints a module's parsed configs declare.
 
-    Every declared address gets an entry, including one declared without a
-    version: presence is what says the module requires the provider at all,
-    which decides whether the lock file may name it, while the constraints
-    decide which version it names.
-
-    A module `terraform init` downloads is not in `declared` and cannot be: it
-    arrives only once `init` has run, and the lock file is written before that.
-    A provider only such a module requires has to be declared by a module Bazel
-    does see, as docs/mirror.md sets out.
+    Every declared provider gets an entry, even with no version constraint,
+    so callers can tell "declared but unconstrained" from "never declared".
 
     Args:
-      declared: the `providers` dicts of a module and everything it depends on,
-        each {alias: {"source": ..., "version": ...}}, as `tf_module` normalises
-        them.
+      declared: the `providers` dicts of a module and its dependencies.
       default_registry: registry host an unqualified source resolves against.
 
     Returns:
-      {"<host>/<ns>/<type>": ["<constraint>", ...]}, the list empty for an
-      address declared with no version.
+      A dict of provider address to the list of version constraints declared for it.
     """
     constraints = {}
     for providers in declared:
@@ -106,14 +68,13 @@ def declared_constraints(declared, default_registry):
     return constraints
 
 def _satisfying_version(versions, specs):
-    """The version a module's declared constraints select, or "".
+    """Picks the mirrored version satisfying every spec.
 
-    Args:
-      versions: the versions the mirror stocks for one address.
-      specs: the constraints declared for it.
+    Falls back to an exact match against a pinned spec ("= x" or bare "x")
+    when select_matching_version rejects it, e.g. a prerelease pin.
 
     Returns:
-      The highest satisfying version, or "" when none satisfies.
+      The satisfying version, or "" if none of the mirrored versions qualify.
     """
 
     version = select_matching_version(versions, ", ".join(specs))
@@ -131,34 +92,19 @@ def _satisfying_version(versions, specs):
     return ""
 
 def select_lock_versions(by_address, constraints):
-    """Chooses the one version per provider address that the lock file names.
+    """Chooses one mirrored version per declared provider address.
 
-    Only providers the module tree declares are named. A mirror is shared across
-    every module in a workspace, so it stocks providers any one module has
-    nothing to do with -- and `init` prunes a block the configuration does not
-    require, rewriting the file to do it. That rewrite is the whole of what the
-    generated document exists to avoid, so a source nothing declared is left
-    out even when the mirror stocks it exactly once.
-
-    A declared address carrying no constraint is named when the mirror stocks it
-    once: with nothing to choose between versions, one stocked version is the
-    only thing `init` could install. Everything else is decided by the declared
-    constraints, ANDed together the way terraform ANDs them across a
-    configuration.
-
-    An address whose constraints select none of the mirrored versions is left
-    out, whether the mirror stocks one version or several. Both the lock file
-    and the configuration would be unsatisfiable, but only the unlocked failure
-    names the real problem: terraform reports that no release matches, rather
-    than that the lock file disagrees with the configuration.
+    An address mirrored but never declared is skipped. A declared address
+    with no version constraint is selected only if the mirror holds exactly
+    one version for it. A declared address with no mirrored version
+    satisfying its constraints is silently omitted, not an error.
 
     Args:
       by_address: mirror contents, as `parse_mirror_hashes` returns them.
       constraints: declared providers, as `declared_constraints` returns them.
 
     Returns:
-      {"<host>/<ns>/<type>": "<version>"}, covering the addresses that can be
-      named.
+      A dict of provider address to the selected version.
     """
     selected = {}
     for address, versions in by_address.items():
@@ -178,21 +124,14 @@ def select_lock_versions(by_address, constraints):
     return selected
 
 def render_lock_document(by_address, selected):
-    """Renders the `.terraform.lock.hcl` document for the selected versions.
-
-    Every platform's hash goes into the block, since `hashes` is a set that
-    terraform matches the installed package against: the members covering other
-    platforms are what let one document serve every machine in a team. The
-    hashes arrive already carrying their scheme, so both are emitted as they
-    were given -- sorted, which happens to put `h1:` ahead of `zh:` the way
-    terraform writes them itself.
+    """Renders the lock file text for the selected provider versions.
 
     Args:
       by_address: mirror contents, as `parse_mirror_hashes` returns them.
-      selected: one version per address, as `select_lock_versions` returns.
+      selected: one version per address, as `select_lock_versions` returns them.
 
     Returns:
-      The document, or "" when no provider could be named in one.
+      The lock file contents, or "" if no versions were selected.
     """
     if not selected:
         return ""
@@ -210,15 +149,12 @@ def render_lock_document(by_address, selected):
     return _HEADER + "".join(blocks)
 
 def module_lock_document(mirror_hashes, declared, default_registry):
-    """The lock document for a module tree: the three passes above, in order.
+    """Builds the .terraform.lock.hcl contents for a module, or "" if none is needed.
 
     Args:
-      mirror_hashes: the tf toolchain's flat hash table.
-      declared: the `providers` dicts of the module and its dependencies.
-      default_registry: registry host an unqualified source resolves against.
-
-    Returns:
-      The document, or "" when the mirror is empty.
+      mirror_hashes: see parse_mirror_hashes.
+      declared: see declared_constraints.
+      default_registry: see declared_constraints.
     """
     by_address = parse_mirror_hashes(mirror_hashes)
     return render_lock_document(
