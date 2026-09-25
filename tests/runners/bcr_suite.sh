@@ -57,3 +57,52 @@ done < <(bit::bazel cquery 'kind("tf_gen_versions rule", //...)' --output files)
 echo "--- root module apply rules"
 bit::bazel run //tf/root-modules/root-mod-a:root-mod-a.init
 bit::bazel run //tf/root-modules/root-mod-a:root-mod-a.plan -- -lock=false
+
+# Two roots over one module, interleaved: both are initialized before either is
+# planned, so a state directory shared between them would hand the first root
+# the second's backend, and a shared plan would be overwritten.
+echo "--- root modules sharing a module"
+shared=//tf/root-modules/root-mod-shared
+bit::bazel run "${shared}:one.init"
+bit::bazel run "${shared}:two.init"
+bit::bazel run "${shared}:one.plan" -- -lock=false
+bit::bazel run "${shared}:two.plan" -- -lock=false
+
+for root in one two; do
+  plan_json="bazel-tf/tf/root-modules/root-mod-shared/${root}/plan.tfplan.json"
+  if ! grep -q "\"root_name\":{\"value\":\"${root}\"}" "${plan_json}"; then
+    echo >&2 "Expected ${plan_json} to hold the plan for root ${root}."
+    exit 1
+  fi
+done
+
+# Each apply executes the plan its own root saved, and extra arguments must land
+# before the plan file, which terraform only takes as the last positional.
+for root in one two; do
+  apply_out="$(bit::bazel run "${shared}:${root}.apply" -- -lock=false -no-color)"
+  echo "${apply_out}"
+  if ! grep -q "root_name = \"${root}\"" <<<"${apply_out}"; then
+    echo >&2 "Expected ${root}.apply to apply the plan for root ${root}."
+    exit 1
+  fi
+done
+
+# A plan that fails must not leave the previous plan for .apply to execute: a
+# destroy plan followed by a failing forward plan would otherwise apply the
+# destroy.
+echo "--- failed plan discards the previous plan"
+bit::bazel run "${shared}:one.destroy" -- -lock=false
+if bit::bazel run "${shared}:one.plan" -- -lock=false -var=undeclared=1; then
+  echo >&2 "Expected one.plan to fail on an undeclared variable."
+  exit 1
+fi
+if apply_out="$(bit::bazel run "${shared}:one.apply" -- -lock=false -no-color 2>&1)"; then
+  echo "${apply_out}"
+  echo >&2 "Expected one.apply to refuse to run without a plan."
+  exit 1
+fi
+echo "${apply_out}"
+if ! grep -q "plan.tfplan file does not exist" <<<"${apply_out}"; then
+  echo >&2 "Expected one.apply to fail for want of a plan."
+  exit 1
+fi

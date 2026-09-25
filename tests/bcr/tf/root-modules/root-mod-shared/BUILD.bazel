@@ -1,0 +1,33 @@
+load("@rules_tf//tf:def.bzl", "tf_module")
+load("@rules_tf//tf_apply:defs.bzl", "tf_root_module")
+
+# One module applied by two roots, the way a stack is applied once per
+# environment. Each root keeps its own state and plan under bazel-tf/, so
+# initializing one must not disturb the other.
+tf_module(
+    name = "root-mod-shared",
+    providers = {
+        "random": "hashicorp/random:3.3.2",
+    },
+    tf_version = ">= 1.9, <= 1.10",
+)
+
+[
+    tf_root_module(
+        name = name,
+        backend = {
+            "local": {
+                "path": "{}.tfstate".format(name),
+            },
+        },
+        module = ":root-mod-shared",
+        output_json = True,
+        tfvars = {
+            "root_name": name,
+        },
+    )
+    for name in [
+        "one",
+        "two",
+    ]
+]

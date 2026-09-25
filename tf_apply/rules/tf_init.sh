@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 
 # Invokes `terraform init` in the specified Terraform directory.
-# The output .terraform directory and lock file are symlinked to bazel-tf on the workspace root.
+# The output .terraform directory and lock file are symlinked into the root
+# module's own directory under bazel-tf on the workspace root.
 
 set -euo pipefail
 
@@ -26,7 +27,7 @@ if [ $# -gt 0 ]; then
     echo "Additional terraform arguments provided: $*"
 fi
 
-OUT_DIR="$BUILD_WORKSPACE_DIRECTORY/bazel-tf/$TF_DIR"
+OUT_DIR="$BUILD_WORKSPACE_DIRECTORY/bazel-tf/%TF_STATE_DIR%"
 mkdir -p "$OUT_DIR"
 
 # Init on a clean TF_DIR

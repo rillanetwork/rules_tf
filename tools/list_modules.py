@@ -2,8 +2,8 @@
 """List all terraform root modules as a JSON matrix for CI consumers.
 
 Each entry:
-  {"package": "...", "module_package": "...", "name": "...",
-   "skip": bool, "affected": bool}
+  {"package": "...", "module_package": "...", "state_dir": "...",
+   "name": "...", "skip": bool, "affected": bool}
 
 This tool is cloud-neutral by design: it emits only module identity plus the
 skip/affected classification that every consumer needs. Consumers that key CI
@@ -66,11 +66,10 @@ def module_packages(query_path: str) -> dict[str, str]:
 
     A ``tf_root_module`` can point ``module =`` at a reusable module in a
     different package (one shared module instantiated by several thin roots,
-    each injecting its own region/labels/backend via tfvars). rules_tf
-    renders the terraform working directory at that *module* package — so CI
-    must chdir there to read the plan, not at the root's own package. For the
-    common ``module = ":self"`` case the two are identical, so consumers can
-    treat this as a no-op for every conventional module.
+    each injecting its own region/labels/backend via tfvars), so this is where
+    the terraform sources live, not where a root's state and plan are kept:
+    those are keyed by the root itself (see ``state_dir``). For the common
+    ``module = ":self"`` case it equals the root's own package.
 
     Keyed by target label: two thin roots in one package can point at
     different shared stacks, so a package-keyed map would silently collapse
@@ -242,10 +241,14 @@ def parse_target(target: str, manual_targets: set[str], affected: set[str], mod_
 
     return {
         "package": package,
-        # Package whose bazel-tf working dir holds the rendered terraform; equals
-        # `package` unless the tf_root_module points module= at a shared module
-        # elsewhere (thin injected roots). CI chdirs here to read the plan.
+        # Package holding the terraform sources; equals `package` unless the
+        # tf_root_module points module= at a shared module elsewhere (thin
+        # injected roots).
         "module_package": mod_packages.get(target, package),
+        # The root's own directory under bazel-tf/, holding its .terraform and
+        # plan. Unique per root even when several share a module_package, so
+        # this, not module_package, is where CI reads a root's plan.
+        "state_dir": f"{package}/{name}" if package else name,
         "name": name,
         "skip": target in manual_targets,
         "affected": target in affected,
