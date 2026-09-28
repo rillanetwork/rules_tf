@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from run import copy_plan_json_artifact, module_entry, plan_artifact_filename
+from run import copy_plan_json_artifact, module_entry, plan_artifact_filename, state_dir
 
 
 class PlanArtifactFilenameTest(unittest.TestCase):
@@ -39,22 +39,28 @@ class ModuleEntryTest(unittest.TestCase):
         self.assertTrue(entry["affected"])
 
 
+class StateDirTest(unittest.TestCase):
+    def test_keyed_by_root_label(self):
+        self.assertEqual(state_dir("//terraform/dev:api"), "terraform/dev/api")
+
+    def test_roots_sharing_a_package_are_distinct(self):
+        self.assertNotEqual(state_dir("//terraform/dev:api"), state_dir("//terraform/dev:web"))
+
+    def test_root_package(self):
+        self.assertEqual(state_dir("//:api"), "api")
+
+
 class CopyPlanJsonArtifactTest(unittest.TestCase):
     def test_copies_emitted_file_under_contract_name(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
-            module_dir = root / "bazel-tf" / "terraform" / "stacks" / "local"
+            module_dir = root / "bazel-tf" / "terraform" / "local" / "local"
             module_dir.mkdir(parents=True)
             (module_dir / "plan.tfplan.json").write_text('{"format_version":"1.2"}')
             artifacts = root / "artifacts"
             artifacts.mkdir()
 
-            copy_plan_json_artifact(
-                artifacts,
-                "//terraform/local:local",
-                root,
-                module_pkg="terraform/stacks/local",
-            )
+            copy_plan_json_artifact(artifacts, "//terraform/local:local", root)
 
             out = artifacts / "terraform--local--local.json"
             self.assertEqual(out.read_text(), '{"format_version":"1.2"}')
@@ -67,27 +73,7 @@ class CopyPlanJsonArtifactTest(unittest.TestCase):
             stderr = io.StringIO()
 
             with contextlib.redirect_stderr(stderr):
-                copy_plan_json_artifact(
-                    artifacts,
-                    "//terraform/local:local",
-                    root,
-                    module_pkg="terraform/stacks/local",
-                )
-
-            self.assertFalse((artifacts / "terraform--local--local.json").exists())
-            self.assertIn("[WARN]", stderr.getvalue())
-
-    def test_unresolved_module_warns_and_skips(self):
-        with tempfile.TemporaryDirectory() as d:
-            root = Path(d)
-            artifacts = root / "artifacts"
-            artifacts.mkdir()
-            stderr = io.StringIO()
-
-            with contextlib.redirect_stderr(stderr):
-                copy_plan_json_artifact(
-                    artifacts, "//terraform/local:local", root, module_pkg=None
-                )
+                copy_plan_json_artifact(artifacts, "//terraform/local:local", root)
 
             self.assertFalse((artifacts / "terraform--local--local.json").exists())
             self.assertIn("[WARN]", stderr.getvalue())

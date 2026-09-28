@@ -2,7 +2,7 @@
 
 # Generic terraform runner. Forwards all arguments to `terraform -chdir=$TF_DIR`,
 # with best-effort symlinking of .terraform, .terraform.lock.hcl, and plan.tfplan
-# from the bazel-tf output directory back into the module source directory.
+# from the root module's bazel-tf output directory back into the module source directory.
 #
 # Usage: bazel run //path:my_module.tf -- <subcommand> [flags...]
 # Examples:
@@ -30,7 +30,7 @@ if [ $# -eq 0 ]; then
     exit 2
 fi
 
-OUT_DIR="$BUILD_WORKSPACE_DIRECTORY/bazel-tf/$TF_DIR"
+OUT_DIR="$BUILD_WORKSPACE_DIRECTORY/bazel-tf/%TF_STATE_DIR%"
 
 # Best-effort symlink the inited state back into the module dir. We don't
 # require these to exist — pre-init commands like `fmt` and `validate` work

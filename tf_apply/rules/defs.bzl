@@ -31,6 +31,22 @@ def relative_path(path, other_path):
     relative_parts = [".."] * (len(other_path_parts) - common_length) + path_parts[common_length:]
     return "/".join(relative_parts)
 
+def _state_dir(ctx):
+    """Returns the workspace-relative directory under bazel-tf/ holding a root module's state.
+
+    Keyed by the root module rather than by `module`, because one module may be
+    applied by several roots, and each needs its own `.terraform` and plan.
+
+    Args:
+        ctx: The rule context of a lifecycle target declared for the root module.
+
+    Returns:
+        `<package>/<name_prefix>` for the package the root module is declared in.
+    """
+    if ctx.label.package:
+        return "{}/{}".format(ctx.label.package, ctx.attr.name_prefix)
+    return ctx.attr.name_prefix
+
 def tf_vars_impl(ctx):
     """
     Generates a tfvars file from the provided key-value pairs.
@@ -183,6 +199,7 @@ def tf_init_impl(ctx):
         substitutions = {
             "%TF_BIN_PATH%": tf_toolchain.runtime.tf.short_path,
             "%TF_DIR%": ctx.attr.module.label.package,
+            "%TF_STATE_DIR%": _state_dir(ctx),
             "%TF_PLUGINS_DIR%": tf_toolchain.runtime.mirror_path,
         },
     )
@@ -207,6 +224,10 @@ tf_init = rule(
     implementation = tf_init_impl,
     executable = True,
     attrs = {
+        "name_prefix": attr.string(
+            mandatory = True,
+            doc = "Name of the tf_root_module this target belongs to: this target's name without its `.init` suffix.",
+        ),
         "module": attr.label(
             allow_single_file = True,
             mandatory = True,
@@ -249,6 +270,7 @@ def tf_plan_impl(ctx):
         substitutions = {
             "%TF_BIN_PATH%": tf_toolchain.runtime.tf.short_path,
             "%TF_DIR%": ctx.attr.module.label.package,
+            "%TF_STATE_DIR%": _state_dir(ctx),
             "%TF_OUTPUT_JSON%": "1" if ctx.attr.output_json else "0",
         },
     )
@@ -274,6 +296,10 @@ tf_plan = rule(
     implementation = tf_plan_impl,
     executable = True,
     attrs = {
+        "name_prefix": attr.string(
+            mandatory = True,
+            doc = "Name of the tf_root_module this target belongs to: this target's name without its `.plan` suffix.",
+        ),
         "module": attr.label(
             allow_single_file = True,
             mandatory = True,
@@ -323,6 +349,7 @@ def tf_destroy_impl(ctx):
         substitutions = {
             "%TF_BIN_PATH%": tf_toolchain.runtime.tf.short_path,
             "%TF_DIR%": ctx.attr.module.label.package,
+            "%TF_STATE_DIR%": _state_dir(ctx),
         },
     )
 
@@ -345,6 +372,10 @@ tf_destroy = rule(
     implementation = tf_destroy_impl,
     executable = True,
     attrs = {
+        "name_prefix": attr.string(
+            mandatory = True,
+            doc = "Name of the tf_root_module this target belongs to: this target's name without its `.destroy` suffix.",
+        ),
         "module": attr.label(
             allow_single_file = True,
             mandatory = True,
@@ -386,6 +417,7 @@ def tf_apply_impl(ctx):
         substitutions = {
             "%TF_BIN_PATH%": tf_toolchain.runtime.tf.short_path,
             "%TF_DIR%": ctx.attr.module.label.package,
+            "%TF_STATE_DIR%": _state_dir(ctx),
         },
     )
 
@@ -409,6 +441,10 @@ tf_apply = rule(
     implementation = tf_apply_impl,
     executable = True,
     attrs = {
+        "name_prefix": attr.string(
+            mandatory = True,
+            doc = "Name of the tf_root_module this target belongs to: this target's name without its `.apply` suffix.",
+        ),
         "module": attr.label(
             allow_single_file = True,
             mandatory = True,
@@ -457,6 +493,7 @@ def tf_cmd_impl(ctx):
         substitutions = {
             "%TF_BIN_PATH%": tf_toolchain.runtime.tf.short_path,
             "%TF_DIR%": ctx.attr.module.label.package,
+            "%TF_STATE_DIR%": _state_dir(ctx),
         },
     )
 
@@ -479,6 +516,10 @@ tf_cmd = rule(
     implementation = tf_cmd_impl,
     executable = True,
     attrs = {
+        "name_prefix": attr.string(
+            mandatory = True,
+            doc = "Name of the tf_root_module this target belongs to: this target's name without its `.tf` suffix.",
+        ),
         "module": attr.label(
             allow_single_file = True,
             mandatory = True,

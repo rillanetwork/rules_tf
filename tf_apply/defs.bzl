@@ -68,6 +68,7 @@ def tf_root_module(
 
     tf_init(
         name = "{}.init".format(name),
+        name_prefix = name,
         module = module,
         tfvars = ":{}.tfvars".format(name),
         backend = ":{}.backend".format(name),
@@ -77,6 +78,7 @@ def tf_root_module(
 
     tf_plan(
         name = "{}.plan".format(name),
+        name_prefix = name,
         module = module,
         tfvars = ":{}.tfvars".format(name),
         backend = ":{}.backend".format(name),
@@ -87,6 +89,7 @@ def tf_root_module(
 
     tf_destroy(
         name = "{}.destroy".format(name),
+        name_prefix = name,
         module = module,
         tfvars = ":{}.tfvars".format(name),
         backend = ":{}.backend".format(name),
@@ -96,6 +99,7 @@ def tf_root_module(
 
     tf_apply(
         name = "{}.apply".format(name),
+        name_prefix = name,
         module = module,
         tfvars = ":{}.tfvars".format(name),
         backend = ":{}.backend".format(name),
@@ -105,6 +109,7 @@ def tf_root_module(
 
     tf_cmd(
         name = "{}.tf".format(name),
+        name_prefix = name,
         module = module,
         tfvars = ":{}.tfvars".format(name),
         backend = ":{}.backend".format(name),

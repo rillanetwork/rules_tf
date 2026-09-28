@@ -17,11 +17,12 @@ class ParseTargetTest(unittest.TestCase):
         )
         self.assertEqual(
             set(row.keys()),
-            {"package", "module_package", "name", "skip", "affected"},
+            {"package", "module_package", "state_dir", "name", "skip", "affected"},
         )
         self.assertEqual(row["package"], "terraform/dev")
         self.assertEqual(row["name"], "gateway_service")
         self.assertEqual(row["module_package"], "terraform/dev")
+        self.assertEqual(row["state_dir"], "terraform/dev/gateway_service")
         self.assertFalse(row["skip"])
         self.assertTrue(row["affected"])
 
@@ -85,6 +86,19 @@ class ParseTargetTest(unittest.TestCase):
             rows["//terraform/aws/audit/global:lambda-error-alerts.plan"]["module_package"],
             "terraform/aws/stacks/lambda-error-alerts",
         )
+
+    def test_roots_sharing_a_module_package_get_distinct_state_dirs(self):
+        mod_packages = {
+            "//terraform/dev:api.plan": "terraform/stacks/api",
+            "//terraform/staging:api.plan": "terraform/stacks/api",
+        }
+        state_dirs = {
+            list_modules.parse_target(
+                t, manual_targets=set(), affected=set(), mod_packages=mod_packages
+            )["state_dir"]
+            for t in mod_packages
+        }
+        self.assertEqual(state_dirs, {"terraform/dev/api", "terraform/staging/api"})
 
 
 class DeletedFilePackageTest(unittest.TestCase):
