@@ -221,7 +221,7 @@ And you can use `bazel run //:terraform` which uses the same version as configur
 
 ## Using Tf Modules
 
-1. Using custom tflint config file
+### Using custom tflint config file
 
 ```python
 load("@rules_tf//tf:def.bzl", "tf_module")
@@ -246,7 +246,7 @@ tf_module(
 A module-level config replaces the toolchain's rather than merging with it. See [docs/tflint.md](docs/tflint.md) for
 the config, `tflint_extra_args`, and ruleset plugins.
 
-1. Generating versions.tf.json files
+### Generating versions.tf.json files
 
 Terraform linter by default requires that all providers used by a module
 are versioned. It is possible to generate a versions.tf.json file by running
@@ -277,7 +277,7 @@ or generate all files of a workspace:
 bazel cquery 'kind(tf_gen_versions, //...)' --output files | xargs -n1 bash
 ```
 
-1. Generating terraform doc files
+### Generating terraform doc files
 
 It is possible to generate a README.md file by running
 a dedicated target for terraform modules:
@@ -316,7 +316,7 @@ tf_gen_doc(
 )
 ```
 
-1. Formatting terraform files
+### Formatting terraform files
 
 It is possible to format terraform files by running a dedicated target:
 

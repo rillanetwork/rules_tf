@@ -6,15 +6,16 @@
 
 set -euo pipefail
 
-TF_BIN_PATH="${PWD}/%TF_BIN_PATH%"
-TF_DIR="%TF_DIR%"
-TF_PLUGINS_DIR="%TF_PLUGINS_DIR%"
+tf_bin="${PWD}/%tf_bin%"
+# The module's package inside this target's runfiles tree, which is unique to the root and command.
+work_dir="${PWD}/%module_dir%"
+plugins_dir="%plugins_dir%"
 
 # Empty when nothing is mirrored: the flag is left off and init resolves against
 # the registry instead.
-PLUGIN_DIR_FLAG=()
-if [ -n "$TF_PLUGINS_DIR" ]; then
-    PLUGIN_DIR_FLAG=(-plugin-dir="${PWD}/${TF_PLUGINS_DIR}")
+plugin_dir_flag=()
+if [ -n "$plugins_dir" ]; then
+    plugin_dir_flag=(-plugin-dir="${PWD}/${plugins_dir}")
 fi
 
 if [ -z "${BUILD_WORKSPACE_DIRECTORY:-}" ]; then
@@ -27,22 +28,22 @@ if [ $# -gt 0 ]; then
     echo "Additional terraform arguments provided: $*"
 fi
 
-OUT_DIR="$BUILD_WORKSPACE_DIRECTORY/bazel-tf/%TF_STATE_DIR%"
-mkdir -p "$OUT_DIR"
+state_dir="$BUILD_WORKSPACE_DIRECTORY/bazel-tf/%state_dir%"
+mkdir -p "$state_dir"
 
-# Init on a clean TF_DIR
-rm -rf "$PWD/$TF_DIR/.terraform"
-rm -rf "$PWD/$TF_DIR/.terraform.lock.hcl"
+# Init on a clean working directory
+rm -rf "$work_dir/.terraform"
+rm -rf "$work_dir/.terraform.lock.hcl"
 
 # remove any existing .terraform and .terraform.lock.hcl files
-rm -rf "$OUT_DIR/.terraform"
-rm -rf "$OUT_DIR/.terraform.lock.hcl"
+rm -rf "$state_dir/.terraform"
+rm -rf "$state_dir/.terraform.lock.hcl"
 
-echo "Running 'terraform init' in directory: $PWD/$TF_DIR"
+echo "Running 'terraform init' in directory: $work_dir"
 
 # Run terraform init
-$TF_BIN_PATH -chdir="$TF_DIR" init -input=false "${PLUGIN_DIR_FLAG[@]}" $@
+$tf_bin -chdir="$work_dir" init -input=false "${plugin_dir_flag[@]}" $@
 
 # symlink the .terraform directory to the output directory
-ln -s  "$PWD/$TF_DIR/.terraform" "$OUT_DIR/.terraform"
-ln -s "$PWD/$TF_DIR/.terraform.lock.hcl" "$OUT_DIR/.terraform.lock.hcl"
+ln -s  "$work_dir/.terraform" "$state_dir/.terraform"
+ln -s "$work_dir/.terraform.lock.hcl" "$state_dir/.terraform.lock.hcl"
