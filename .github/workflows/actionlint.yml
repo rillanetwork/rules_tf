@@ -34,3 +34,6 @@ jobs:
 
       - name: Lint workflows
         run: bazel test //.github:actionlint --test_output=errors
+
+      - name: Audit workflows
+        run: bazel test //.github:zizmor --test_output=errors
