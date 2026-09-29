@@ -1,5 +1,6 @@
 module(
-    name = "rules_tf",
+    name = "rilla_rules_tf",
+    version = "2.2.0",
     # The provider mirror resolves in the module extension and records the
     # result as extension facts, which Bazel gained in 9.0.
     bazel_compatibility = [">=9.0.0"],
@@ -48,20 +49,4 @@ use_repo(
 
 register_toolchains(
     "@tf_toolchains//:all",
-)
-
-# Development-only: autoconfigures a git toolchain from the system git, used by
-# //tf/releasing to generate release notes. Previously set up in
-# WORKSPACE.bzlmod, which Bazel 9 no longer reads.
-git_configure = use_extension(
-    "@rules_tf//tf/toolchains/git:git_configure.bzl",
-    "git_configure",
-    dev_dependency = True,
-)
-use_repo(git_configure, "rules_tf_git")
-
-register_toolchains(
-    "@rules_tf_git//:git_auto_toolchain",
-    "//tf/toolchains/git:git_missing_toolchain",
-    dev_dependency = True,
 )

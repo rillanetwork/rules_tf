@@ -9,7 +9,7 @@ exports_files(
     visibility = ["//visibility:public"],
 )
 
-# Lets downstream gazelle resolve `@rules_tf//tf:def.bzl` to `//tf:def`. deps stay
+# Lets downstream gazelle resolve `@rilla_rules_tf//tf:def.bzl` to `//tf:def`. deps stay
 # empty: load() binds to the exported source file, so deps are Stardoc-only metadata.
 bzl_library(
     name = "def",

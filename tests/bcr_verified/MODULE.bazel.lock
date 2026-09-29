@@ -470,7 +470,7 @@
     }
   },
   "facts": {
-    "@@rules_tf+//tf:extensions.bzl%tf_repositories": {
+    "@@rilla_rules_tf+//tf:extensions.bzl%tf_repositories": {
       "package/registry.terraform.io/hashicorp/null/3.1.1/darwin_amd64": {
         "download_url": "https://releases.hashicorp.com/terraform-provider-null/3.1.1/terraform-provider-null_3.1.1_darwin_amd64.zip",
         "sha256": "b21b78ca581f98f4cdb7a366b03ae9db23a73dfa7df12c533d7c19b68e9e72e5",
