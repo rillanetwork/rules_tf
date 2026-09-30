@@ -251,3 +251,30 @@ The same source may appear at several versions; each is fetched independently, s
 Modules then select whichever version they require through their own `required_providers` block.
 
 When nothing is mirrored, `init` is run without `-plugin-dir` and resolves providers against the registry.
+
+## The generated lock file
+
+### Providers required by a downloaded module
+
+When you have a module that's sourced from a registry, or a remote URL, rules_tf can't see its `required_providers`
+block until terraform's own `init` runs. So, you'd see logging like this:
+
+```
+- Reusing previous version of hashicorp/aws from the dependency lock file
+- Finding latest version of hashicorp/random...
+- Installing hashicorp/random v3.3.2...
+```
+
+This is saying `hashicorp/aws` was in the generated lock and was reused unchanged; `hashicorp/random` was not, so
+terraform went and  resolved it itself. To avoid that, you could pre-declare the provider required by the remote module:
+
+```python
+tf_module(
+    name = "foo",
+    providers = {
+        "aws": "hashicorp/aws:5.100.0",
+        # required by the remote 'registry' module sourced at ./main.tf
+        "random": "hashicorp/random:3.6.0",
+    },
+)
+```

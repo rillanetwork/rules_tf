@@ -36,7 +36,8 @@ py_test(
 
 # Tool aliases sourced from multitool (see //tools/multitool:lock.json). These
 # are dev-only: they resolve @multitool, a dev_dependency repo, so consumers of
-# the ruleset must never depend on them. Used by //.github:actionlint.
+# the ruleset must never depend on them. Used by //.github:actionlint and
+# //.github:zizmor.
 alias(
     name = "actionlint",
     actual = "@multitool//tools/actionlint",
@@ -46,5 +47,11 @@ alias(
 alias(
     name = "shellcheck",
     actual = "@multitool//tools/shellcheck",
+    visibility = ["//.github:__pkg__"],
+)
+
+alias(
+    name = "zizmor",
+    actual = "@multitool//tools/zizmor",
     visibility = ["//.github:__pkg__"],
 )

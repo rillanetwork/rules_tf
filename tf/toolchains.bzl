@@ -82,6 +82,17 @@ def _render_mirror_versions(joined):
         return "[]"
     return "[" + ", ".join(['"%s"' % v for v in joined.split(",")]) + "]"
 
+def _render_mirror_hashes(encoded):
+    """Renders a JSON-encoded hash map as a Starlark dict literal."""
+    if encoded == "":
+        return "{}"
+
+    hashes = json.decode(encoded)
+    return "{" + ", ".join([
+        '"%s": "%s"' % (key, hashes[key])
+        for key in sorted(hashes)
+    ]) + "}"
+
 def _tf_toolchains_impl(ctx):
     content = """
 load("@rules_tf//tf:toolchains.bzl", "platforms")
@@ -116,6 +127,7 @@ package(default_visibility = ["//visibility:public"])
             os = ctx.attr.os,
             arch = ctx.attr.arch,
             mirror_versions = _render_mirror_versions(ctx.attr.repo_mirrors.get(repo, "")),
+            mirror_hashes = _render_mirror_hashes(ctx.attr.repo_hashes.get(repo, "")),
             default_registry = DEFAULT_REGISTRY[False],
         )
         content += chunk
@@ -126,6 +138,7 @@ package(default_visibility = ["//visibility:public"])
             os = ctx.attr.os,
             arch = ctx.attr.arch,
             mirror_versions = _render_mirror_versions(ctx.attr.repo_mirrors.get(repo, "")),
+            mirror_hashes = _render_mirror_hashes(ctx.attr.repo_hashes.get(repo, "")),
             default_registry = DEFAULT_REGISTRY[True],
         )
         content += chunk
@@ -141,6 +154,10 @@ tf_toolchains = repository_rule(
         "tofu_repos": attr.string_list(mandatory = True),
         "repo_mirrors": attr.string_dict(
             doc = "Per-repo resolved manifest: repo name -> comma-joined 'source@version' entries.",
+        ),
+        "repo_hashes": attr.string_dict(
+            doc = "Per-repo package hashes: repo name -> JSON of " +
+                  "'<host>/<ns>/<type>@<version>' -> comma-joined, scheme-prefixed hashes.",
         ),
         "os": attr.string(mandatory = True),
         "arch": attr.string(mandatory = True),

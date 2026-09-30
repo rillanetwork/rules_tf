@@ -26,3 +26,24 @@ sh_test(
     ],
     deps = ["@bazel_tools//tools/bash/runfiles"],
 )
+
+# Offline: the audits that query the GitHub API (impostor commits, known
+# vulnerable actions) need network access and a token, which a test must not
+# depend on.
+sh_test(
+    name = "zizmor",
+    srcs = ["zizmor.sh"],
+    args = [
+        "--bin",
+        "$(rlocationpath //tools:zizmor)",
+        "--",
+        "$(rlocationpath :dependabot.yml)",
+        "$(rlocationpaths :workflows)",
+    ],
+    data = [
+        ":dependabot.yml",
+        ":workflows",
+        "//tools:zizmor",
+    ],
+    deps = ["@bazel_tools//tools/bash/runfiles"],
+)

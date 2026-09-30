@@ -10,6 +10,7 @@ tf_bin="${PWD}/%tf_bin%"
 # The module's package inside this target's runfiles tree, which is unique to the root and command.
 work_dir="${PWD}/%module_dir%"
 plugins_dir="%plugins_dir%"
+lock_file="%lock_file%"
 
 # Empty when nothing is mirrored: the flag is left off and init resolves against
 # the registry instead.
@@ -38,6 +39,11 @@ rm -rf "$work_dir/.terraform.lock.hcl"
 # remove any existing .terraform and .terraform.lock.hcl files
 rm -rf "$state_dir/.terraform"
 rm -rf "$state_dir/.terraform.lock.hcl"
+
+if [ -n "$lock_file" ]; then
+    cp -f "$lock_file" "$work_dir/.terraform.lock.hcl"
+    chmod u+w "$work_dir/.terraform.lock.hcl"
+fi
 
 echo "Running 'terraform init' in directory: $work_dir"
 

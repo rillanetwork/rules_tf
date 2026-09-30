@@ -7,9 +7,10 @@ mirrored" rather than as a failing assertion.
 """
 
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
-load(":facts.bzl", "package_fact_key")
+load(":facts.bzl", "dirhash_fact_key", "package_fact_key")
 load(
     ":provider_locks.bzl",
+    "collect_provider_dirhashes",
     "merge_provider_locks",
     "parse_provider_locks",
     "unverified_packages",
@@ -34,6 +35,8 @@ _LOCK_RANDOM = """
 provider "registry.terraform.io/hashicorp/random" {
   version = "3.1.3"
   hashes = [
+    "h1:one=",
+    "h1:two=",
     "zh:cccc",
   ]
 }
@@ -51,7 +54,7 @@ provider "registry.terraform.io/hashicorp/tls" {
 def _parse_provider_locks_test_impl(ctx):
     env = unittest.begin(ctx)
 
-    locks = parse_provider_locks([_LOCK_NULL, _LOCK_RANDOM, _LOCK_ONE_LINE])
+    locks, dirhashes = parse_provider_locks([_LOCK_NULL, _LOCK_RANDOM, _LOCK_ONE_LINE])
 
     # Keyed by address and version, since a mirror may stock several versions of
     # one provider and each needs its own lock file.
@@ -64,10 +67,59 @@ def _parse_provider_locks_test_impl(ctx):
     # Every hash on the line is taken, and the block still closes.
     asserts.equals(env, ["dddd", "eeee"], sorted(locks["registry.terraform.io/hashicorp/tls@4.0.4"].keys()))
 
-    # h1: is dropped: it covers the extracted directory, not the package, and
-    # admitting it would let a package match on a hash of something else.
     asserts.equals(env, ["aaaa", "bbbb"], sorted(locks["registry.terraform.io/hashicorp/null@3.1.1"].keys()))
     asserts.equals(env, ["cccc"], sorted(locks["registry.terraform.io/hashicorp/random@3.1.3"].keys()))
+
+    asserts.equals(env, [
+        "registry.terraform.io/hashicorp/null@3.1.1",
+        "registry.terraform.io/hashicorp/random@3.1.3",
+    ], sorted(dirhashes.keys()))
+    asserts.equals(
+        env,
+        ["71sNUDvmiJcijsvfXpiLCz0lXIBSsEJjMxljt7hxMhw="],
+        sorted(dirhashes["registry.terraform.io/hashicorp/null@3.1.1"].keys()),
+    )
+    asserts.equals(
+        env,
+        ["one=", "two="],
+        sorted(dirhashes["registry.terraform.io/hashicorp/random@3.1.3"].keys()),
+    )
+
+    asserts.false(env, "registry.terraform.io/hashicorp/tls@4.0.4" in dirhashes)
+
+    return unittest.end(env)
+
+def _collect_dirhashes_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    null = {"host": "registry.terraform.io", "namespace": "hashicorp", "type": "null", "version": "3.1.1"}
+    random = {"host": "registry.terraform.io", "namespace": "hashicorp", "type": "random", "version": "3.1.3"}
+    tls = {"host": "registry.terraform.io", "namespace": "hashicorp", "type": "tls", "version": "4.0.4"}
+
+    _, dirhashes = parse_provider_locks([_LOCK_NULL, _LOCK_RANDOM, _LOCK_ONE_LINE])
+
+    previous = {
+        dirhash_fact_key(null["host"], null["namespace"], null["type"], null["version"]): {
+            "hashes": "remembered=",
+        },
+    }
+
+    collected = collect_provider_dirhashes(previous, [null, random, tls], dirhashes)
+
+    asserts.equals(
+        env,
+        ["71sNUDvmiJcijsvfXpiLCz0lXIBSsEJjMxljt7hxMhw=", "remembered="],
+        collected["registry.terraform.io/hashicorp/null@3.1.1"],
+    )
+    asserts.equals(env, ["one=", "two="], collected["registry.terraform.io/hashicorp/random@3.1.3"])
+
+    asserts.false(env, "registry.terraform.io/hashicorp/tls@4.0.4" in collected)
+
+    asserts.equals(
+        env,
+        {"registry.terraform.io/hashicorp/null@3.1.1": ["remembered="]},
+        collect_provider_dirhashes(previous, [null], {}),
+    )
 
     return unittest.end(env)
 
@@ -134,6 +186,7 @@ def _facts_and_merge_test_impl(ctx):
     return unittest.end(env)
 
 _parse_provider_locks_test = unittest.make(_parse_provider_locks_test_impl)
+_collect_dirhashes_test = unittest.make(_collect_dirhashes_test_impl)
 _facts_and_merge_test = unittest.make(_facts_and_merge_test_impl)
 
 def provider_locks_test_suite(name = "provider_locks_test"):
@@ -145,5 +198,6 @@ def provider_locks_test_suite(name = "provider_locks_test"):
     unittest.suite(
         name,
         _parse_provider_locks_test,
+        _collect_dirhashes_test,
         _facts_and_merge_test,
     )
