@@ -1,0 +1,17 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", "security:only-security-updates"],
+  "labels": ["type/dependencies"],
+  "timezone": "Pacific/Auckland",
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 9am on monday"]
+  },
+  "packageRules": [
+    {
+      "description": "Vulnerable transitive dependencies are only reachable by refreshing the lockfile, which security:only-security-updates would otherwise disable",
+      "matchUpdateTypes": ["lockFileMaintenance"],
+      "enabled": true
+    }
+  ]
+}
