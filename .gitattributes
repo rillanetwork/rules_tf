@@ -1,0 +1,5 @@
+# Content excluded from the release archive built by `git archive` in
+# .github/workflows/release.yml. Keep this list minimal: the archive is what
+# the Bazel Central Registry consumes, so anything the BCR presubmit builds --
+# including tests/bcr, which serves as its bcr_test_module -- must survive.
+.github export-ignore

@@ -1,0 +1,20 @@
+{
+  "homepage": "https://github.com/rillanetwork/rules_tf",
+  "maintainers": [
+    {
+      "github": "dominics",
+      "github_user_id": 97427
+    },
+    {
+      "github": "GregJShaw",
+      "github_user_id": 44791478
+    },
+    {
+      "github": "pulasthibandara",
+      "github_user_id": 8141799
+    }
+  ],
+  "repository": ["github:rillanetwork/rules_tf"],
+  "versions": [],
+  "yanked_versions": {}
+}
