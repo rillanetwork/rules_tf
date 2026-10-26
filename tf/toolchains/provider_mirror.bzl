@@ -224,7 +224,8 @@ def resolve_providers(ctx, entries, default_host, os, arch, facts):
       default_host: registry an unqualified source resolves against.
       os: host operating system, in terraform's spelling ("linux", "darwin").
       arch: host architecture, in terraform's spelling ("amd64", "arm64").
-      facts: the previously persisted fact table, `module_ctx.facts`. A hit
+      facts: the facts known so far, persisted or recorded earlier in this
+        evaluation; only `.get(key)` is used. A hit
         skips the matching registry request; a miss resolves live and joins
         the facts returned to the caller.
 

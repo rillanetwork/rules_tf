@@ -11,6 +11,8 @@
 /tests/bcr_mirror_json/.bazeliskrc
 /tests/bcr_facts/bazel-*
 /tests/bcr_facts/.bazeliskrc
+/tests/bcr_multi_tag/bazel-*
+/tests/bcr_multi_tag/.bazeliskrc
 /tests/bcr_tofu/bazel-*
 /tests/bcr_tofu/MODULE.bazel.lock
 /tests/bcr_tofu/.bazeliskrc

@@ -52,7 +52,8 @@ def resolve_tool_sha256(
       version: the release to resolve.
       os: the host operating system, in the release's spelling.
       arch: the host architecture, in the release's spelling.
-      facts: the previously persisted fact table, `module_ctx.facts`.
+      facts: the facts known so far, persisted or recorded earlier in this
+        evaluation; only `.get(key)` is used.
       sha256sums_template: the release's SHA256SUMS URL, taking `{version}`.
       archive_template: the archive's name in the SHA256SUMS document, taking
         `{tool}`, `{version}`, `{os}` and `{arch}`.
