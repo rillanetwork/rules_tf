@@ -1,0 +1,32 @@
+module(
+    name = "rules_tf_bcr_multi_tag_tests",
+    version = "0.0.1",
+)
+
+bazel_dep(name = "rules_tf", version = "", repo_name = "rules_tf")
+local_path_override(
+    module_name = "rules_tf",
+    path = "../..",
+)
+
+tf = use_extension("@rules_tf//tf:extensions.bzl", "tf_repositories")
+
+# The first tag verifies, the second does not: re-resolving must keep the
+# first tag's marks.
+tf.download(
+    mirror = ["hashicorp/null:3.1.1"],
+    tfdoc_version = "0.19.0",
+    tflint_config = "//:tflint.hcl",
+    tflint_version = "0.53.0",
+    version = "1.9.5",
+)
+tf.download(
+    mirror = ["hashicorp/null:3.1.1"],
+    provider_verification = "off",
+    tfdoc_version = "0.19.0",
+    tflint_config = "//:tflint.hcl",
+    tflint_plugin_verification = "off",
+    tflint_version = "0.53.0",
+    version = "1.9.5",
+)
+use_repo(tf, "tf_toolchains")

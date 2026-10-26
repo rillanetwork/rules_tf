@@ -189,7 +189,8 @@ def resolve_tflint_plugins(ctx, plugins, os, arch, facts):
       plugins: rulesets from `parse_tflint_plugins`.
       os: host operating system, in the release's spelling.
       arch: host architecture, in the release's spelling.
-      facts: the persisted fact table, `module_ctx.facts`.
+      facts: the facts known so far, persisted or recorded earlier in this
+        evaluation; only `.get(key)` is used.
 
     Returns:
       (resolved, facts, errors): resolved adds the host's `download_url` and

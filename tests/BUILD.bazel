@@ -16,6 +16,12 @@ tf_integration_test(
 )
 
 tf_integration_test(
+    name = "multi_tag_test",
+    test_runner = "//tests/runners:multi_tag_suite",
+    workspace_path = "bcr_multi_tag",
+)
+
+tf_integration_test(
     name = "tofu_test",
     bazel_cmds = [
         "test //...",
@@ -48,6 +54,7 @@ test_suite(
     tests = [
         ":bcr_test",
         ":mirror_json_test",
+        ":multi_tag_test",
         ":tofu_test",
         ":verified_test",
     ],

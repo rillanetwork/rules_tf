@@ -10,5 +10,6 @@
 tests/bcr/bazel-bcr
 tests/bcr_facts/bazel-bcr_facts
 tests/bcr_mirror_json/bazel-bcr_mirror_json
+tests/bcr_multi_tag/bazel-bcr_multi_tag
 tests/bcr_tofu/bazel-bcr_tofu
 tests/bcr_verified/bazel-bcr_verified

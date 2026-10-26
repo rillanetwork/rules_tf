@@ -269,7 +269,8 @@ def collect_provider_dirhashes(previous, packages, discovered):
     """Combines freshly discovered dirhashes with any previously recorded ones.
 
     Args:
-      previous: the prior evaluation's fact table.
+      previous: the facts known so far, persisted or recorded earlier in this
+        evaluation; only `.get(key)` is used.
       packages: resolved coordinates to collect dirhashes for.
       discovered: dirhashes from this run, as `parse_provider_locks` returns them.
 

@@ -91,6 +91,25 @@ def _repo_name(*, module, tool, index, suffix = ""):
         suffix = suffix,
     )
 
+def _known_facts(persisted, current):
+    """Returns a lookup over facts from this evaluation, falling back to persisted ones.
+
+    Args:
+      persisted: facts recorded in MODULE.bazel.lock by earlier evaluations.
+      current: facts gathered so far in this evaluation; these take precedence.
+        Read live, so later writes to it are seen.
+
+    Returns:
+      A struct with `get(key, default = None)`.
+    """
+
+    def get(key, default = None):
+        if key in current:
+            return current[key]
+        return persisted.get(key, default)
+
+    return struct(get = get)
+
 def _tf_repositories(ctx):
     host_detected_os, host_detected_arch = detect_host_platform(ctx)
 
@@ -109,6 +128,7 @@ def _tf_repositories(ctx):
     repo_hashes = {}
 
     facts = {}
+    known_facts = _known_facts(ctx.facts, facts)
 
     for module in ctx.modules:
         for index, version_tag in enumerate(module.tags.download):
@@ -132,7 +152,7 @@ def _tf_repositories(ctx):
                 version_tag.tfdoc_version,
                 host_detected_os,
                 host_detected_arch,
-                ctx.facts,
+                known_facts,
                 TFDOC_SHA256SUMS_TEMPLATE,
                 archive_template = TFDOC_ARCHIVE_TEMPLATE,
             )
@@ -161,7 +181,7 @@ def _tf_repositories(ctx):
                 version_tag.tflint_version,
                 host_detected_os,
                 host_detected_arch,
-                ctx.facts,
+                known_facts,
                 TFLINT_SHA256SUMS_TEMPLATE,
                 archive_template = TFLINT_ARCHIVE_TEMPLATE,
             )
@@ -175,7 +195,7 @@ def _tf_repositories(ctx):
                 parse_tflint_plugins(tflint_config),
                 host_detected_os,
                 host_detected_arch,
-                ctx.facts,
+                known_facts,
             )
             facts.update(plugin_facts)
             tflint_errors.extend(plugin_errors)
@@ -236,7 +256,7 @@ def _tf_repositories(ctx):
                 DEFAULT_REGISTRY[version_tag.use_tofu],
                 host_detected_os,
                 host_detected_arch,
-                ctx.facts,
+                known_facts,
             )
             facts.update(tag_facts)
 
@@ -247,7 +267,7 @@ def _tf_repositories(ctx):
                 version_tag.version,
                 host_detected_os,
                 host_detected_arch,
-                ctx.facts,
+                known_facts,
                 TOFU_SHA256SUMS_TEMPLATE if version_tag.use_tofu else TERRAFORM_SHA256SUMS_TEMPLATE,
             )
             facts.update(tool_facts)
@@ -295,7 +315,7 @@ def _tf_repositories(ctx):
 
             repo_mirrors[tf_repo_name] = mirror_manifest(packages)
 
-            collected = collect_provider_dirhashes(ctx.facts, packages, dirhashes)
+            collected = collect_provider_dirhashes(known_facts, packages, dirhashes)
             for p in packages:
                 key = "%s/%s/%s@%s" % (p["host"], p["namespace"], p["type"], p["version"])
                 if key in collected:
@@ -360,7 +380,8 @@ _version_tag = tag_class(
             doc = "Whether mirrored tflint rulesets must match a release whose signature tflint " +
                   "verified. 'auto' verifies each release with `tflint --init` (needs network) " +
                   "and records the result in MODULE.bazel.lock, failing for a ruleset outside " +
-                  "terraform-linters with no signing_key. 'off' skips the check and warns.",
+                  "terraform-linters with no signing_key. 'off' skips the check and warns. " +
+                  "Marks are per release, shared by every tag.",
         ),
         "tfdoc_version": attr.string(default = TFDOC_VERSION),
         "mirror": attr.string_list(
@@ -394,7 +415,8 @@ _version_tag = tag_class(
                   "fail on an entry no hash covers. 'off' admits unverified packages on " +
                   "the registry's word, warning about each -- what a registry publishing " +
                   "no signatures leaves available. Packages a recorded mark or a " +
-                  "provider_locks file covers are as verified as under 'auto', silently.",
+                  "provider_locks file covers are as verified as under 'auto', silently. " +
+                  "Marks are per package, shared by every tag.",
         ),
         "mirror_json": attr.label(
             allow_single_file = True,
