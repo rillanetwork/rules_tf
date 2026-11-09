@@ -10,8 +10,8 @@ package(
 
 license(
     name = "license",
-    package_name = "rules_tf",
-    copyright_notice = "Copyright 2025-2026 Rilla Network; portions Copyright Yann Degat and The Bazel Authors. See NOTICE.",
+    package_name = "rilla_rules_tf",
+    copyright_notice = "Copyright 2025-2026 Rilla Network; portions Copyright Yann Degat. See NOTICE.",
     license_kinds = [
         "@rules_license//licenses/spdx:Apache-2.0",
     ],
@@ -50,7 +50,6 @@ filegroup(
         "//tf:all_files",
         "//tf/rules:all_files",
         "//tf/toolchains:all_files",
-        "//tf/toolchains/git:all_files",
         "//tf/toolchains/terraform:all_files",
         "//tf/toolchains/tfdoc:all_files",
         "//tf/toolchains/tflint:all_files",
