@@ -21,6 +21,7 @@ package(default_applicable_licenses = ["//:license"])
         "bazel_suite",
         "bcr_suite",
         "mirror_json_suite",
+        "multi_tag_suite",
         "verified_suite",
     ]
 ]
