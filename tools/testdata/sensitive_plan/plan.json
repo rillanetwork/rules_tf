@@ -1,0 +1,583 @@
+{
+  "applyable": true,
+  "complete": true,
+  "configuration": {
+    "provider_config": {
+      "random": {
+        "full_name": "registry.terraform.io/hashicorp/random",
+        "name": "random",
+        "version_constraint": "3.3.2"
+      },
+      "terraform": {
+        "full_name": "terraform.io/builtin/terraform",
+        "name": "terraform"
+      }
+    },
+    "root_module": {
+      "module_calls": {
+        "child": {
+          "expressions": {
+            "plain": {
+              "references": [
+                "var.plain"
+              ]
+            },
+            "secret": {
+              "references": [
+                "var.secret"
+              ]
+            }
+          },
+          "module": {
+            "outputs": {
+              "secret_out": {
+                "expression": {
+                  "references": [
+                    "var.secret"
+                  ]
+                },
+                "sensitive": true
+              }
+            },
+            "resources": [
+              {
+                "address": "terraform_data.child",
+                "expressions": {
+                  "input": {
+                    "references": [
+                      "var.plain",
+                      "var.secret"
+                    ]
+                  }
+                },
+                "mode": "managed",
+                "name": "child",
+                "provider_config_key": "terraform",
+                "schema_version": 0,
+                "type": "terraform_data"
+              }
+            ],
+            "variables": {
+              "plain": {},
+              "secret": {
+                "sensitive": true
+              }
+            }
+          },
+          "source": "./child"
+        }
+      },
+      "outputs": {
+        "plain": {
+          "expression": {
+            "references": [
+              "var.plain"
+            ]
+          }
+        },
+        "pw": {
+          "expression": {
+            "references": [
+              "random_password.pw.result",
+              "random_password.pw"
+            ]
+          },
+          "sensitive": true
+        }
+      },
+      "resources": [
+        {
+          "address": "random_password.pw",
+          "expressions": {
+            "keepers": {
+              "references": [
+                "var.plain"
+              ]
+            },
+            "length": {
+              "constant_value": 16
+            },
+            "special": {
+              "constant_value": false
+            }
+          },
+          "mode": "managed",
+          "name": "pw",
+          "provider_config_key": "random",
+          "schema_version": 2,
+          "type": "random_password"
+        },
+        {
+          "address": "terraform_data.mixed",
+          "expressions": {
+            "input": {
+              "references": [
+                "var.plain",
+                "var.secret",
+                "var.secret_with_default"
+              ]
+            }
+          },
+          "mode": "managed",
+          "name": "mixed",
+          "provider_config_key": "terraform",
+          "schema_version": 0,
+          "type": "terraform_data"
+        }
+      ],
+      "variables": {
+        "plain": {},
+        "secret": {
+          "sensitive": true
+        },
+        "secret_with_default": {
+          "default": "DEFAULT-SECRET-VALUE",
+          "sensitive": true
+        }
+      }
+    }
+  },
+  "errored": false,
+  "format_version": "1.2",
+  "output_changes": {
+    "plain": {
+      "actions": [
+        "update"
+      ],
+      "after": "two",
+      "after_sensitive": false,
+      "after_unknown": false,
+      "before": "one",
+      "before_sensitive": false
+    },
+    "pw": {
+      "actions": [
+        "update"
+      ],
+      "after_sensitive": true,
+      "after_unknown": true,
+      "before": "QKpngKOzyblG9ZaW",
+      "before_sensitive": true
+    }
+  },
+  "planned_values": {
+    "outputs": {
+      "plain": {
+        "sensitive": false,
+        "type": "string",
+        "value": "two"
+      },
+      "pw": {
+        "sensitive": true
+      }
+    },
+    "root_module": {
+      "child_modules": [
+        {
+          "address": "module.child",
+          "resources": [
+            {
+              "address": "module.child.terraform_data.child",
+              "mode": "managed",
+              "name": "child",
+              "provider_name": "terraform.io/builtin/terraform",
+              "schema_version": 0,
+              "sensitive_values": {
+                "input": [
+                  false,
+                  true
+                ],
+                "output": []
+              },
+              "type": "terraform_data",
+              "values": {
+                "id": "870537e1-ecda-e661-3915-2486702d1fde",
+                "input": [
+                  "two",
+                  "SECRET-TWO"
+                ],
+                "triggers_replace": null
+              }
+            }
+          ]
+        }
+      ],
+      "resources": [
+        {
+          "address": "random_password.pw",
+          "mode": "managed",
+          "name": "pw",
+          "provider_name": "registry.terraform.io/hashicorp/random",
+          "schema_version": 2,
+          "sensitive_values": {
+            "keepers": {}
+          },
+          "type": "random_password",
+          "values": {
+            "keepers": {
+              "rotate": "two"
+            },
+            "length": 16,
+            "lower": true,
+            "min_lower": 0,
+            "min_numeric": 0,
+            "min_special": 0,
+            "min_upper": 0,
+            "number": true,
+            "numeric": true,
+            "override_special": null,
+            "special": false,
+            "upper": true
+          }
+        },
+        {
+          "address": "terraform_data.mixed",
+          "mode": "managed",
+          "name": "mixed",
+          "provider_name": "terraform.io/builtin/terraform",
+          "schema_version": 0,
+          "sensitive_values": {
+            "input": {
+              "other": true,
+              "token": true
+            },
+            "output": {}
+          },
+          "type": "terraform_data",
+          "values": {
+            "id": "d7228127-0005-1bd9-29a7-7bc854150422",
+            "input": {
+              "name": "two",
+              "other": "DEFAULT-SECRET-VALUE",
+              "token": "SECRET-TWO"
+            },
+            "triggers_replace": null
+          }
+        }
+      ]
+    }
+  },
+  "prior_state": {
+    "format_version": "1.0",
+    "terraform_version": "1.12.2",
+    "values": {
+      "outputs": {
+        "plain": {
+          "sensitive": false,
+          "type": "string",
+          "value": "two"
+        },
+        "pw": {
+          "sensitive": true,
+          "type": "string",
+          "value": "QKpngKOzyblG9ZaW"
+        }
+      },
+      "root_module": {
+        "child_modules": [
+          {
+            "address": "module.child",
+            "resources": [
+              {
+                "address": "module.child.terraform_data.child",
+                "mode": "managed",
+                "name": "child",
+                "provider_name": "terraform.io/builtin/terraform",
+                "schema_version": 0,
+                "sensitive_values": {
+                  "input": [
+                    false,
+                    true
+                  ],
+                  "output": [
+                    false,
+                    false
+                  ]
+                },
+                "type": "terraform_data",
+                "values": {
+                  "id": "870537e1-ecda-e661-3915-2486702d1fde",
+                  "input": [
+                    "one",
+                    "SECRET-ONE"
+                  ],
+                  "output": [
+                    "one",
+                    "SECRET-ONE"
+                  ],
+                  "triggers_replace": null
+                }
+              }
+            ]
+          }
+        ],
+        "resources": [
+          {
+            "address": "random_password.pw",
+            "mode": "managed",
+            "name": "pw",
+            "provider_name": "registry.terraform.io/hashicorp/random",
+            "schema_version": 2,
+            "sensitive_values": {
+              "bcrypt_hash": true,
+              "keepers": {},
+              "result": true
+            },
+            "type": "random_password",
+            "values": {
+              "bcrypt_hash": "$2a$10$l51KbduI6BRSWcFTQ1Gruu4h.y6Knndn0mmPfkvP3oBCK5ynvRmHu",
+              "id": "none",
+              "keepers": {
+                "rotate": "one"
+              },
+              "length": 16,
+              "lower": true,
+              "min_lower": 0,
+              "min_numeric": 0,
+              "min_special": 0,
+              "min_upper": 0,
+              "number": true,
+              "numeric": true,
+              "override_special": null,
+              "result": "QKpngKOzyblG9ZaW",
+              "special": false,
+              "upper": true
+            }
+          },
+          {
+            "address": "terraform_data.mixed",
+            "mode": "managed",
+            "name": "mixed",
+            "provider_name": "terraform.io/builtin/terraform",
+            "schema_version": 0,
+            "sensitive_values": {
+              "input": {
+                "other": true,
+                "token": true
+              },
+              "output": {}
+            },
+            "type": "terraform_data",
+            "values": {
+              "id": "d7228127-0005-1bd9-29a7-7bc854150422",
+              "input": {
+                "name": "one",
+                "other": "DEFAULT-SECRET-VALUE",
+                "token": "SECRET-ONE"
+              },
+              "output": {
+                "name": "one",
+                "other": "DEFAULT-SECRET-VALUE",
+                "token": "SECRET-ONE"
+              },
+              "triggers_replace": null
+            }
+          }
+        ]
+      }
+    }
+  },
+  "relevant_attributes": [
+    {
+      "attribute": [
+        "result"
+      ],
+      "resource": "random_password.pw"
+    }
+  ],
+  "resource_changes": [
+    {
+      "action_reason": "replace_because_cannot_update",
+      "address": "random_password.pw",
+      "change": {
+        "actions": [
+          "delete",
+          "create"
+        ],
+        "after": {
+          "keepers": {
+            "rotate": "two"
+          },
+          "length": 16,
+          "lower": true,
+          "min_lower": 0,
+          "min_numeric": 0,
+          "min_special": 0,
+          "min_upper": 0,
+          "number": true,
+          "numeric": true,
+          "override_special": null,
+          "special": false,
+          "upper": true
+        },
+        "after_sensitive": {
+          "bcrypt_hash": true,
+          "keepers": {},
+          "result": true
+        },
+        "after_unknown": {
+          "bcrypt_hash": true,
+          "id": true,
+          "keepers": {},
+          "result": true
+        },
+        "before": {
+          "bcrypt_hash": "$2a$10$l51KbduI6BRSWcFTQ1Gruu4h.y6Knndn0mmPfkvP3oBCK5ynvRmHu",
+          "id": "none",
+          "keepers": {
+            "rotate": "one"
+          },
+          "length": 16,
+          "lower": true,
+          "min_lower": 0,
+          "min_numeric": 0,
+          "min_special": 0,
+          "min_upper": 0,
+          "number": true,
+          "numeric": true,
+          "override_special": null,
+          "result": "QKpngKOzyblG9ZaW",
+          "special": false,
+          "upper": true
+        },
+        "before_sensitive": {
+          "bcrypt_hash": true,
+          "keepers": {},
+          "result": true
+        },
+        "replace_paths": [
+          [
+            "keepers"
+          ]
+        ]
+      },
+      "mode": "managed",
+      "name": "pw",
+      "provider_name": "registry.terraform.io/hashicorp/random",
+      "type": "random_password"
+    },
+    {
+      "address": "terraform_data.mixed",
+      "change": {
+        "actions": [
+          "update"
+        ],
+        "after": {
+          "id": "d7228127-0005-1bd9-29a7-7bc854150422",
+          "input": {
+            "name": "two",
+            "other": "DEFAULT-SECRET-VALUE",
+            "token": "SECRET-TWO"
+          },
+          "triggers_replace": null
+        },
+        "after_sensitive": {
+          "input": {
+            "other": true,
+            "token": true
+          },
+          "output": {}
+        },
+        "after_unknown": {
+          "input": {},
+          "output": true
+        },
+        "before": {
+          "id": "d7228127-0005-1bd9-29a7-7bc854150422",
+          "input": {
+            "name": "one",
+            "other": "DEFAULT-SECRET-VALUE",
+            "token": "SECRET-ONE"
+          },
+          "output": {
+            "name": "one",
+            "other": "DEFAULT-SECRET-VALUE",
+            "token": "SECRET-ONE"
+          },
+          "triggers_replace": null
+        },
+        "before_sensitive": {
+          "input": {
+            "other": true,
+            "token": true
+          },
+          "output": {}
+        }
+      },
+      "mode": "managed",
+      "name": "mixed",
+      "provider_name": "terraform.io/builtin/terraform",
+      "type": "terraform_data"
+    },
+    {
+      "address": "module.child.terraform_data.child",
+      "change": {
+        "actions": [
+          "update"
+        ],
+        "after": {
+          "id": "870537e1-ecda-e661-3915-2486702d1fde",
+          "input": [
+            "two",
+            "SECRET-TWO"
+          ],
+          "triggers_replace": null
+        },
+        "after_sensitive": {
+          "input": [
+            false,
+            true
+          ],
+          "output": []
+        },
+        "after_unknown": {
+          "input": [
+            false,
+            false
+          ],
+          "output": true
+        },
+        "before": {
+          "id": "870537e1-ecda-e661-3915-2486702d1fde",
+          "input": [
+            "one",
+            "SECRET-ONE"
+          ],
+          "output": [
+            "one",
+            "SECRET-ONE"
+          ],
+          "triggers_replace": null
+        },
+        "before_sensitive": {
+          "input": [
+            false,
+            true
+          ],
+          "output": [
+            false,
+            false
+          ]
+        }
+      },
+      "mode": "managed",
+      "module_address": "module.child",
+      "name": "child",
+      "provider_name": "terraform.io/builtin/terraform",
+      "type": "terraform_data"
+    }
+  ],
+  "terraform_version": "1.12.2",
+  "timestamp": "2026-11-09T22:12:46Z",
+  "variables": {
+    "plain": {
+      "value": "two"
+    },
+    "secret": {
+      "value": "SECRET-TWO"
+    },
+    "secret_with_default": {
+      "value": "DEFAULT-SECRET-VALUE"
+    }
+  }
+}

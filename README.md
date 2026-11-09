@@ -475,4 +475,12 @@ bazel run @rules_tf//tools:run -- //terraform/... init plan \
   [--extra_var_file vars.tfvars] [--plan_artifacts_dir out/]
 ```
 
-With `--plan_artifacts_dir` (and `plan` among the actions) it copies each module's `plan.tfplan.json` to `<package>--<name>.json`, writes an error envelope for failed plans, and emits a `modules.json` matrix - best-effort reporting that never fails the run.
+With `--plan_artifacts_dir` (and `plan` among the actions) it copies each module's `plan.tfplan.json` to `<package>--<name>.json`, writes an error envelope (`{"error": ...}`) for failed plans, and emits a `modules.json` matrix. This reporting is best-effort and never fails the run.
+
+### `@rules_tf//tools:redact_plan_json`
+
+Masks sensitive values in a `terraform show -json` plan, reading a file (or `-` for stdin) and writing the result to a file (or stdout):
+
+```bash
+bazel run @rules_tf//tools:redact_plan_json -- plan.json redacted.json   # or - for stdin/stdout
+```
