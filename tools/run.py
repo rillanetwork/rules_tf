@@ -2,11 +2,12 @@ import argparse
 import json
 import multiprocessing as mp
 import os
-import shutil
 import subprocess
 import sys
 from pathlib import Path
 from typing import Literal, NamedTuple, Optional, Union, assert_never, final
+
+from redact_plan_json import redact_plan
 
 TFAction = Literal["init", "plan", "apply"]
 ArgsType = NamedTuple("ArgsType", [("query_path", str), ("actions", list[TFAction])])
@@ -129,23 +130,34 @@ def copy_plan_json_artifact(
     target: str,
     workspace_root: Path,
 ) -> None:
-    """Best-effort: copy the plan step's ``plan.tfplan.json`` into the artifacts dir.
+    """Best-effort: redact the plan step's ``plan.tfplan.json`` into the artifacts dir.
 
     rules_tf, for modules built with ``output_json = True``, writes
     ``plan.tfplan.json`` into ``bazel-tf/<state_dir>/`` during the ``.plan``
     step. Copy it to ``plan_artifacts_dir`` under the contract name
-    ``plan_artifact_filename(target)`` (e.g. ``terraform--local--local.json``).
+    ``plan_artifact_filename(target)`` (e.g. ``terraform--local--local.json``),
+    with sensitive values redacted (see ``redact_plan_json``), since the
+    artifacts dir is meant to be uploaded.
 
     Emission is best-effort reporting — plan/apply success is the real signal —
-    so a missing emitted file must be warned to stderr (include ``[WARN]``) and
-    skipped, never raised.
+    so a missing or unparseable emitted file must be warned to stderr (include
+    ``[WARN]``) and skipped, never raised. It is never copied unredacted.
     """
     src = workspace_root / "bazel-tf" / state_dir(target) / "plan.tfplan.json"
     if not src.exists():
         print(f"[WARN] No plan JSON emitted for {target} at {src}", file=sys.stderr)
         return
 
-    shutil.copyfile(src, plan_artifacts_dir / plan_artifact_filename(target))
+    try:
+        plan = json.loads(src.read_text())
+    except json.JSONDecodeError as e:
+        print(
+            f"[WARN] Unparseable plan JSON for {target} at {src}: {e}", file=sys.stderr
+        )
+        return
+
+    out_path = plan_artifacts_dir / plan_artifact_filename(target)
+    out_path.write_text(json.dumps(redact_plan(plan)))
 
 
 def write_plan_error_artifact(

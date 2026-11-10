@@ -1,4 +1,4 @@
-load("@rules_python//python:defs.bzl", "py_binary", "py_test")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 
 py_binary(
     name = "list_modules",
@@ -17,11 +17,33 @@ py_test(
     main = "list_modules_test.py",
 )
 
+py_library(
+    name = "redact_plan_json_lib",
+    srcs = ["redact_plan_json.py"],
+    imports = ["."],
+)
+
+py_binary(
+    name = "redact_plan_json",
+    srcs = ["redact_plan_json.py"],
+    main = "redact_plan_json.py",
+    visibility = ["//visibility:public"],
+)
+
+py_test(
+    name = "redact_plan_json_test",
+    srcs = ["redact_plan_json_test.py"],
+    data = glob(["testdata/sensitive_plan/**"]),
+    main = "redact_plan_json_test.py",
+    deps = [":redact_plan_json_lib"],
+)
+
 py_binary(
     name = "run",
     srcs = ["run.py"],
     main = "run.py",
     visibility = ["//visibility:public"],
+    deps = [":redact_plan_json_lib"],
 )
 
 py_test(
@@ -32,6 +54,7 @@ py_test(
     ],
     imports = ["."],
     main = "run_test.py",
+    deps = [":redact_plan_json_lib"],
 )
 
 # Tool aliases sourced from multitool (see //tools/multitool:lock.json). These

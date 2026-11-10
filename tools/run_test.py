@@ -1,5 +1,6 @@
 import contextlib
 import io
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -44,7 +45,9 @@ class StateDirTest(unittest.TestCase):
         self.assertEqual(state_dir("//terraform/dev:api"), "terraform/dev/api")
 
     def test_roots_sharing_a_package_are_distinct(self):
-        self.assertNotEqual(state_dir("//terraform/dev:api"), state_dir("//terraform/dev:web"))
+        self.assertNotEqual(
+            state_dir("//terraform/dev:api"), state_dir("//terraform/dev:web")
+        )
 
     def test_root_package(self):
         self.assertEqual(state_dir("//:api"), "api")
@@ -63,7 +66,53 @@ class CopyPlanJsonArtifactTest(unittest.TestCase):
             copy_plan_json_artifact(artifacts, "//terraform/local:local", root)
 
             out = artifacts / "terraform--local--local.json"
-            self.assertEqual(out.read_text(), '{"format_version":"1.2"}')
+            self.assertEqual(json.loads(out.read_text()), {"format_version": "1.2"})
+
+    def test_redacts_sensitive_values(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            module_dir = root / "bazel-tf" / "terraform" / "local" / "local"
+            module_dir.mkdir(parents=True)
+            (module_dir / "plan.tfplan.json").write_text(
+                json.dumps(
+                    {
+                        "configuration": {
+                            "root_module": {"variables": {"token": {"sensitive": True}}}
+                        },
+                        "variables": {"token": {"value": "hunter2"}},
+                        "output_changes": {
+                            "pw": {
+                                "actions": ["create"],
+                                "after": "hunter2",
+                                "after_sensitive": True,
+                            }
+                        },
+                    }
+                )
+            )
+            artifacts = root / "artifacts"
+            artifacts.mkdir()
+
+            copy_plan_json_artifact(artifacts, "//terraform/local:local", root)
+
+            out = (artifacts / "terraform--local--local.json").read_text()
+            self.assertNotIn("hunter2", out)
+
+    def test_unparseable_emitted_file_warns_and_skips(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            module_dir = root / "bazel-tf" / "terraform" / "local" / "local"
+            module_dir.mkdir(parents=True)
+            (module_dir / "plan.tfplan.json").write_text('{"secret": "hunter2"')
+            artifacts = root / "artifacts"
+            artifacts.mkdir()
+            stderr = io.StringIO()
+
+            with contextlib.redirect_stderr(stderr):
+                copy_plan_json_artifact(artifacts, "//terraform/local:local", root)
+
+            self.assertFalse((artifacts / "terraform--local--local.json").exists())
+            self.assertIn("[WARN]", stderr.getvalue())
 
     def test_missing_emitted_file_warns_and_skips(self):
         with tempfile.TemporaryDirectory() as d:
