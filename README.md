@@ -475,7 +475,7 @@ bazel run @rules_tf//tools:run -- //terraform/... init plan \
   [--extra_var_file vars.tfvars] [--plan_artifacts_dir out/]
 ```
 
-With `--plan_artifacts_dir` (and `plan` among the actions) it copies each module's `plan.tfplan.json` to `<package>--<name>.json`, writes an error envelope (`{"error": ...}`) for failed plans, and emits a `modules.json` matrix. This reporting is best-effort and never fails the run.
+With `--plan_artifacts_dir` (and `plan` among the actions) it has each module's `.plan` emit `plan.tfplan.json` (whether or not the module sets `output_json`) and copies it, redacted, to `<package>--<name>.json`. It also writes an error envelope (`{"error": ...}`) for failed plans and emits a `modules.json` matrix. This reporting is best-effort and never fails the run.
 
 ### `@rules_tf//tools:redact_plan_json`
 

@@ -3,9 +3,16 @@ import io
 import json
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
-from run import copy_plan_json_artifact, module_entry, plan_artifact_filename, state_dir
+from run import (
+    copy_plan_json_artifact,
+    module_entry,
+    plan_artifact_filename,
+    run_terraform_plan,
+    state_dir,
+)
 
 
 class PlanArtifactFilenameTest(unittest.TestCase):
@@ -126,6 +133,21 @@ class CopyPlanJsonArtifactTest(unittest.TestCase):
 
             self.assertFalse((artifacts / "terraform--local--local.json").exists())
             self.assertIn("[WARN]", stderr.getvalue())
+
+
+class RunTerraformPlanTest(unittest.TestCase):
+    def plan_env(self, plan_json):
+        with mock.patch("run.subprocess.run") as run:
+            run.return_value.returncode = 0
+            run.return_value.stdout = ""
+            run_terraform_plan("//terraform/dev:api", Path("/ws"), None, plan_json)
+        return run.call_args.kwargs["env"]
+
+    def test_requests_plan_json_from_the_plan_step(self):
+        self.assertEqual(self.plan_env(True)["RULES_TF_PLAN_JSON"], "1")
+
+    def test_inherits_the_environment_otherwise(self):
+        self.assertIsNone(self.plan_env(False))
 
 
 if __name__ == "__main__":

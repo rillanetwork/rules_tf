@@ -36,7 +36,8 @@ def tf_root_module(
             `*.auto.tfvars.json` file, so values arrive fully typed in Terraform.
         tfvars_deps: Mapping of tfvars keys to labels; each resolves to the dependency's
             file path (relative to the module) at analysis time.
-        output_json: Whether `<name>.plan` should also emit a JSON-formatted plan.
+        output_json: Whether `<name>.plan` should also emit a JSON-formatted plan. `tools:run` with
+            `--plan_artifacts_dir` has it emitted either way.
         tags: Tags to apply to the generated targets.
         visibility: Visibility of the generated targets.
     """
