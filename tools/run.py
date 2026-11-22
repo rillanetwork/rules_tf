@@ -132,9 +132,10 @@ def copy_plan_json_artifact(
 ) -> None:
     """Best-effort: redact the plan step's ``plan.tfplan.json`` into the artifacts dir.
 
-    rules_tf, for modules built with ``output_json = True``, writes
-    ``plan.tfplan.json`` into ``bazel-tf/<state_dir>/`` during the ``.plan``
-    step. Copy it to ``plan_artifacts_dir`` under the contract name
+    The ``.plan`` step writes ``plan.tfplan.json`` into ``bazel-tf/<state_dir>/``
+    for modules built with ``output_json = True``, or whenever
+    ``RULES_TF_PLAN_JSON`` is set, as ``run_terraform_plan`` does when there is
+    an artifacts dir. Copy it to ``plan_artifacts_dir`` under the contract name
     ``plan_artifact_filename(target)`` (e.g. ``terraform--local--local.json``),
     with sensitive values redacted (see ``redact_plan_json``), since the
     artifacts dir is meant to be uploaded.
@@ -188,17 +189,23 @@ def run_terraform_init(target: str, workspace_root: Path) -> TFResult:
 
 
 def run_terraform_plan(
-    target: str, workspace_root: Path, extra_var_file: Optional[str]
+    target: str, workspace_root: Path, extra_var_file: Optional[str], plan_json: bool
 ) -> TFResult:
     args: list[str] = ["bazel", "run", f"{target}.plan"]
     if extra_var_file:
         args.extend(["--", "-var-file", extra_var_file])
+
+    env = None
+    if plan_json:
+        # Makes the .plan step emit plan.tfplan.json even without `output_json = True`.
+        env = {**os.environ, "RULES_TF_PLAN_JSON": "1"}
 
     result = subprocess.run(
         args,
         capture_output=True,
         text=True,
         cwd=workspace_root,
+        env=env,
     )
 
     if result.returncode != 0:
@@ -230,11 +237,12 @@ def run_terraform_action(
     target: str,
     workspace_root: Path,
     extra_var_file: Optional[str],
+    plan_json: bool,
 ) -> TFSuccess:
     if action == "init":
         result = run_terraform_init(target, workspace_root)
     elif action == "plan":
-        result = run_terraform_plan(target, workspace_root, extra_var_file)
+        result = run_terraform_plan(target, workspace_root, extra_var_file, plan_json)
     elif action == "apply":
         result = run_terraform_apply(target, workspace_root)
     else:
@@ -268,7 +276,11 @@ def run_terraform_actions(
     for action in actions:
         try:
             result = run_terraform_action(
-                action, target, workspace_root, extra_var_file
+                action,
+                target,
+                workspace_root,
+                extra_var_file,
+                plan_json=plan_artifacts_dir is not None,
             )
         except TFError as e:
             # Emit an error envelope for a failed plan before propagating, so
@@ -308,9 +320,10 @@ def main():
         "--plan_artifacts_dir",
         type=str,
         help=(
-            "If set (and 'plan' is among the actions), copy each module's "
-            "plan JSON (emitted by the plan step as bazel-tf/<package>/<name>/"
-            "plan.tfplan.json) to this directory as <package>--<name>.json "
+            "If set (and 'plan' is among the actions), have the plan step "
+            "emit each module's plan JSON (as bazel-tf/<package>/<name>/"
+            "plan.tfplan.json) and copy it, redacted, to this directory as "
+            "<package>--<name>.json "
             "(failed plans get an error envelope), plus a modules.json "
             "describing the planned matrix. Relative paths are resolved against "
             "the workspace root. Best-effort reporting; a missing plan JSON "

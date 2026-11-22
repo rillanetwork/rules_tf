@@ -58,6 +58,18 @@ echo "--- root module apply rules"
 bit::bazel run //tf/root-modules/root-mod-a:root-mod-a.init
 bit::bazel run //tf/root-modules/root-mod-a:root-mod-a.plan -- -lock=false
 
+# root-mod-a leaves output_json off, so only RULES_TF_PLAN_JSON (as set by tools:run) gets it a JSON plan.
+plan_json="bazel-tf/tf/root-modules/root-mod-a/root-mod-a/plan.tfplan.json"
+if [[ -e ${plan_json} ]]; then
+  echo >&2 "Expected no ${plan_json} without output_json."
+  exit 1
+fi
+RULES_TF_PLAN_JSON=1 bit::bazel run //tf/root-modules/root-mod-a:root-mod-a.plan -- -lock=false
+if ! grep -q '"format_version"' "${plan_json}"; then
+  echo >&2 "Expected RULES_TF_PLAN_JSON to make root-mod-a.plan emit ${plan_json}."
+  exit 1
+fi
+
 # Two roots over one module, interleaved: both are initialized before either is
 # planned, so a state directory shared between them would hand the first root
 # the second's backend, and a shared plan would be overwritten.

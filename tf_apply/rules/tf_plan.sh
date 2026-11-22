@@ -9,7 +9,12 @@ set -euo pipefail
 tf_bin="${PWD}/%tf_bin%"
 # The module's package inside this target's runfiles tree, which is unique to the root and command.
 work_dir="${PWD}/%module_dir%"
-output_json=%output_json%
+# Set by `tools:run --plan_artifacts_dir`, which needs the JSON plan whatever the target's attribute says.
+if [ -n "${RULES_TF_PLAN_JSON:-}" ]; then
+    output_json=1
+else
+    output_json=%output_json%
+fi
 
 if [ -z "${BUILD_WORKSPACE_DIRECTORY:-}" ]; then
     echo "BUILD_WORKSPACE_DIRECTORY is not set. Please set it before running this script."
