@@ -259,8 +259,11 @@ def run_terraform_action(
 
         raise result
 
-    print(f"""[SUCCESS] === {result.target}.{result.action} ===
-{result.stdout}""")
+    print(
+        f"""[SUCCESS] === {result.target}.{result.action} ===
+{result.stdout}""",
+        flush=True,
+    )
 
     return result
 
