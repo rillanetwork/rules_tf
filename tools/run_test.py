@@ -1,6 +1,9 @@
 import contextlib
 import io
 import json
+import os
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -148,6 +151,30 @@ class RunTerraformPlanTest(unittest.TestCase):
 
     def test_inherits_the_environment_otherwise(self):
         self.assertIsNone(self.plan_env(False))
+
+
+class RunTerraformActionOutputTest(unittest.TestCase):
+    def test_success_output_survives_abrupt_worker_exit(self):
+        # Runs in a child that exits via os._exit (no buffer flush), as a worker
+        # does, so the output must already be flushed when the action returns.
+        child = """
+import os
+from pathlib import Path
+from unittest import mock
+import run
+with mock.patch("run.run_terraform_plan") as plan:
+    plan.return_value = run.TFSuccess("plan", "//terraform/dev:api", stdout="FULL PLAN OUTPUT")
+    run.run_terraform_action("plan", "//terraform/dev:api", Path("/ws"), None, False)
+os._exit(0)
+"""
+        result = subprocess.run(
+            [sys.executable, "-c", child],
+            capture_output=True,
+            text=True,
+            env={**os.environ, "PYTHONPATH": os.pathsep.join(sys.path)},
+            check=True,
+        )
+        self.assertIn("FULL PLAN OUTPUT", result.stdout)
 
 
 if __name__ == "__main__":
