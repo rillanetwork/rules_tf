@@ -1,0 +1,35 @@
+---
+matrix:
+  platform: ["debian11", "ubuntu2204", "macos_arm64"]
+  bazel: ["9.*"]
+
+tasks:
+  verify_targets:
+    name: "Verify build targets"
+    platform: ${{ platform }}
+    bazel: ${{ bazel }}
+    build_targets:
+      # Not //..., which would reach tests/ and lint/. Those need
+      # dev_dependency modules, which are absent when this module is not the
+      # root, and the --deleted_packages that hides the child modules under
+      # tests/ lives in .bazelrc, which applies only to a root workspace.
+      - "@rilla_rules_tf//tf/..."
+      - "@rilla_rules_tf//tf_apply/..."
+      - "@rilla_rules_tf//tools/..."
+      - "@rilla_rules_tf//:all"
+      # Lint-only targets; they need tools not available in the BCR presubmit.
+      - "-@rilla_rules_tf//tools:shellcheck"
+      - "-@rilla_rules_tf//tools:actionlint"
+
+bcr_test_module:
+  module_path: "tests/bcr"
+  matrix:
+    platform: ["debian11", "ubuntu2204", "macos_arm64"]
+    bazel: ["9.*"]
+  tasks:
+    run_tests:
+      name: "Run test module"
+      platform: ${{ platform }}
+      bazel: ${{ bazel }}
+      test_targets:
+        - "//..."
